@@ -1,4 +1,3 @@
-cat > Dockerfile << 'EOF'
 FROM node:20-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -18,4 +17,3 @@ COPY . .
 EXPOSE 3001
 
 CMD ["node", "server.js"]
-EOF
