@@ -5,8 +5,9 @@
 // ✅ Only ONE name field — English letters only
 // ✅ Direct doctor link support (preselectedDoctorId)
 // ✅ Date picker: only enabled on doctor's chamber days
-// ✅ Doctor image + quals + workplace + specialty in profile card
-// ✅ Referral source NOT auto-selected (patient chooses)
+// ✅ Doctor image / User icon fallback in profile card
+// ✅ Doctor quals + workplace + specialty shown
+// ✅ Referral source NOT auto-selected
 // ==================================================
 import React, { useState, useEffect, useMemo } from 'react';
 import { db, doc, getDoc, setDoc, addDoc, collection } from './firebase';
@@ -165,6 +166,7 @@ const BookingCSS = `
   .doctor-profile-card { background: linear-gradient(135deg, #0d9488, #0f766e); border-radius: 16px; padding: 20px; margin-bottom: 24px; color: #fff; box-shadow: 0 8px 20px rgba(13,148,136,0.25); text-align: center; }
   .doctor-profile-avatar { width: 80px; height: 80px; border-radius: 50%; background: rgba(255,255,255,0.2); border: 3px solid rgba(255,255,255,0.5); margin: 0 auto 12px; display: flex; align-items: center; justify-content: center; font-size: 32px; font-weight: 800; overflow: hidden; padding: 0; }
   .doctor-profile-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
+  .doctor-profile-avatar svg { color: #ffffff; }
   .doctor-profile-name { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
   .doctor-profile-specialty { font-size: 15px; font-weight: 700; color: #fef3c7; margin-bottom: 6px; }
   .doctor-profile-quals { font-size: 13px; opacity: 0.95; line-height: 1.5; white-space: pre-line; margin-bottom: 6px; }
@@ -709,7 +711,7 @@ export default function BookingSystem({ departments, panels, preselectedDoctorId
           <form onSubmit={handleSubmit}>
             <h2 className="booking-title">রোগীর ডাক্তার বুকিং ফর্ম</h2>
 
-            {/* ✅ Doctor Profile Card — with image, quals, workplace, specialty */}
+            {/* ✅ Doctor Profile Card — with image / User icon fallback */}
             {isDirectBooking && selectedDoctor && (
               <div className="doctor-profile-card">
                 <div className="doctor-profile-avatar">
@@ -719,7 +721,7 @@ export default function BookingSystem({ departments, panels, preselectedDoctorId
                       alt={selectedDoctor.name}
                     />
                   ) : (
-                    selectedDoctor.name?.charAt(0) || '👨‍⚕️'
+                    <User size={40} strokeWidth={1.5} color="#ffffff" />
                   )}
                 </div>
                 <div className="doctor-profile-name">{selectedDoctor.name}</div>
