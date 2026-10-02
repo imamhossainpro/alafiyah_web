@@ -2,7 +2,7 @@
 // ==================================================
 // 📩 ConfirmMessageModal — Patient arrival time
 // ==================================================
-// ✅ Preview shows exactly what SMS will be sent
+// ✅ Preview with Bengali → English transliteration
 // ✅ No emoji, English only
 // ==================================================
 import React, { useState, useEffect } from 'react';
@@ -43,12 +43,56 @@ const TIME_PRESETS = [
 // ==================================================
 const formatDateDDMMYYYY = (dateStr) => {
   if (!dateStr) return '';
-  // If already in YYYY-MM-DD format
   const parts = String(dateStr).split('-');
   if (parts.length === 3 && parts[0].length === 4) {
     return `${parts[2]}-${parts[1]}-${parts[0]}`;
   }
   return dateStr;
+};
+
+// ==================================================
+// ✅ Bengali → English Transliteration (for preview)
+// ==================================================
+const BN_TO_EN_MAP = {
+  'অ': 'O', 'আ': 'A', 'ই': 'I', 'ঈ': 'I', 'উ': 'U', 'ঊ': 'U',
+  'ঋ': 'Ri', 'এ': 'E', 'ঐ': 'Oi', 'ও': 'O', 'ঔ': 'Ou',
+  'া': 'a', 'ি': 'i', 'ী': 'i', 'ু': 'u', 'ূ': 'u', 'ৃ': 'ri',
+  'ে': 'e', 'ৈ': 'oi', 'ো': 'o', 'ৌ': 'ou',
+  'ক': 'K', 'খ': 'Kh', 'গ': 'G', 'ঘ': 'Gh', 'ঙ': 'Ng',
+  'চ': 'Ch', 'ছ': 'Chh', 'জ': 'J', 'ঝ': 'Jh', 'ঞ': 'Ny',
+  'ট': 'T', 'ঠ': 'Th', 'ড': 'D', 'ঢ': 'Dh', 'ণ': 'N',
+  'ত': 'T', 'থ': 'Th', 'দ': 'D', 'ধ': 'Dh', 'ন': 'N',
+  'প': 'P', 'ফ': 'Ph', 'ব': 'B', 'ভ': 'Bh', 'ম': 'M',
+  'য': 'Y', 'র': 'R', 'ল': 'L', 'শ': 'Sh', 'ষ': 'Sh', 'স': 'S', 'হ': 'H',
+  'ড়': 'R', 'ঢ়': 'Rh', 'য়': 'Y', 'ৎ': 't', 'ং': 'ng', 'ঃ': 'h', 'ঁ': '',
+  '০': '0', '১': '1', '২': '2', '৩': '3', '৪': '4',
+  '৫': '5', '৬': '6', '৭': '7', '৮': '8', '৯': '9',
+  '।': '.', '্': '',
+};
+
+const transliterateToEnglish = (text) => {
+  if (!text) return '';
+  if (typeof text !== 'string') return String(text);
+
+  let result = text
+    .replace(/ডাঃ/g, 'Dr. ')
+    .replace(/ডা\./g, 'Dr. ')
+    .replace(/মোঃ/g, 'M. ')
+    .replace(/মোছাঃ/g, 'Mst. ')
+    .replace(/মিসেস/g, 'Mrs. ')
+    .replace(/মিস্টার/g, 'Mr. ')
+    .replace(/শ্রী/g, 'Sri ');
+
+  let out = '';
+  for (let i = 0; i < result.length; i++) {
+    const ch = result[i];
+    if (BN_TO_EN_MAP[ch] !== undefined) {
+      out += BN_TO_EN_MAP[ch];
+    } else {
+      out += ch;
+    }
+  }
+  return out.replace(/\s+/g, ' ').trim();
 };
 
 export default function ConfirmMessageModal({
@@ -72,21 +116,25 @@ export default function ConfirmMessageModal({
       const nextHour = now.getHours() + 1;
       const hour12 = nextHour > 12 ? nextHour - 12 : nextHour === 0 ? 12 : nextHour;
       const period = nextHour < 12 ? 'AM' : 'PM';
-      setArrivalTime(
-        `${String(hour12).padStart(2, '0')}:00 ${period}`
-      );
+      setArrivalTime(`${String(hour12).padStart(2, '0')}:00 ${period}`);
     }
   }, [appointment]);
 
   if (!appointment) return null;
 
   // ==================================================
-  // ✅ Preview Message — exactly what SMS will look like
+  // ✅ Transliterate names for preview
+  // ==================================================
+  const englishPatientName = transliterateToEnglish(appointment.name || '');
+  const englishDoctorName = transliterateToEnglish(appointment.doctorName || '');
+
+  // ==================================================
+  // ✅ Preview Message
   // ==================================================
   const previewMessage = `Al-Afiyah Hospital
-Dear ${appointment.name},
+Dear ${englishPatientName},
 Serial: ${serialNo || appointment.serialNo}
-Doctor: ${appointment.doctorName}
+Doctor: ${englishDoctorName}
 Date: ${formatDateDDMMYYYY(appointment.bookingDate)}
 Time: ${arrivalTime || 'As scheduled'}
 Booking Confirmed. Thank you.`;
@@ -198,7 +246,7 @@ Booking Confirmed. Thank you.`;
                 color: '#64748b',
               }}
             >
-              {appointment.name} · {appointment.mobile} · {appointment.doctorName}
+              {englishPatientName} · {appointment.mobile} · {englishDoctorName}
             </p>
           </div>
           <button
