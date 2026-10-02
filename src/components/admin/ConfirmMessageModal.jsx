@@ -2,7 +2,7 @@
 // ==================================================
 // 📩 ConfirmMessageModal — Patient arrival time
 // ==================================================
-// ✅ Preview with Bengali → English transliteration
+// ✅ Uses appointment.nameEn / doctorNameEn (no transliteration)
 // ✅ No emoji, English only
 // ==================================================
 import React, { useState, useEffect } from 'react';
@@ -50,51 +50,6 @@ const formatDateDDMMYYYY = (dateStr) => {
   return dateStr;
 };
 
-// ==================================================
-// ✅ Bengali → English Transliteration (for preview)
-// ==================================================
-const BN_TO_EN_MAP = {
-  'অ': 'O', 'আ': 'A', 'ই': 'I', 'ঈ': 'I', 'উ': 'U', 'ঊ': 'U',
-  'ঋ': 'Ri', 'এ': 'E', 'ঐ': 'Oi', 'ও': 'O', 'ঔ': 'Ou',
-  'া': 'a', 'ি': 'i', 'ী': 'i', 'ু': 'u', 'ূ': 'u', 'ৃ': 'ri',
-  'ে': 'e', 'ৈ': 'oi', 'ো': 'o', 'ৌ': 'ou',
-  'ক': 'K', 'খ': 'Kh', 'গ': 'G', 'ঘ': 'Gh', 'ঙ': 'Ng',
-  'চ': 'Ch', 'ছ': 'Chh', 'জ': 'J', 'ঝ': 'Jh', 'ঞ': 'Ny',
-  'ট': 'T', 'ঠ': 'Th', 'ড': 'D', 'ঢ': 'Dh', 'ণ': 'N',
-  'ত': 'T', 'থ': 'Th', 'দ': 'D', 'ধ': 'Dh', 'ন': 'N',
-  'প': 'P', 'ফ': 'Ph', 'ব': 'B', 'ভ': 'Bh', 'ম': 'M',
-  'য': 'Y', 'র': 'R', 'ল': 'L', 'শ': 'Sh', 'ষ': 'Sh', 'স': 'S', 'হ': 'H',
-  'ড়': 'R', 'ঢ়': 'Rh', 'য়': 'Y', 'ৎ': 't', 'ং': 'ng', 'ঃ': 'h', 'ঁ': '',
-  '০': '0', '১': '1', '২': '2', '৩': '3', '৪': '4',
-  '৫': '5', '৬': '6', '৭': '7', '৮': '8', '৯': '9',
-  '।': '.', '্': '',
-};
-
-const transliterateToEnglish = (text) => {
-  if (!text) return '';
-  if (typeof text !== 'string') return String(text);
-
-  let result = text
-    .replace(/ডাঃ/g, 'Dr. ')
-    .replace(/ডা\./g, 'Dr. ')
-    .replace(/মোঃ/g, 'M. ')
-    .replace(/মোছাঃ/g, 'Mst. ')
-    .replace(/মিসেস/g, 'Mrs. ')
-    .replace(/মিস্টার/g, 'Mr. ')
-    .replace(/শ্রী/g, 'Sri ');
-
-  let out = '';
-  for (let i = 0; i < result.length; i++) {
-    const ch = result[i];
-    if (BN_TO_EN_MAP[ch] !== undefined) {
-      out += BN_TO_EN_MAP[ch];
-    } else {
-      out += ch;
-    }
-  }
-  return out.replace(/\s+/g, ' ').trim();
-};
-
 export default function ConfirmMessageModal({
   appointment,
   hospitalId,
@@ -123,10 +78,10 @@ export default function ConfirmMessageModal({
   if (!appointment) return null;
 
   // ==================================================
-  // ✅ Transliterate names for preview
+  // ✅ Direct English fields (no transliteration)
   // ==================================================
-  const englishPatientName = transliterateToEnglish(appointment.name || '');
-  const englishDoctorName = transliterateToEnglish(appointment.doctorName || '');
+  const englishPatientName = appointment.nameEn || appointment.name || '';
+  const englishDoctorName = appointment.doctorNameEn || appointment.doctorName || '';
 
   // ==================================================
   // ✅ Preview Message
@@ -312,7 +267,7 @@ Booking Confirmed. Thank you.`;
             />
           </div>
 
-          {/* ✅ Patient Arrival Time */}
+          {/* Patient Arrival Time */}
           <div style={{ marginBottom: '20px' }}>
             <label
               style={{

@@ -4,6 +4,7 @@
 // ==================================================
 // ✅ BangladeshMobileInput (dual format + counter)
 // ✅ Fixed Success Screen — No serial, no QR, no links
+// ✅ Only ONE name field — English letters only (Bengali blocked)
 // ==================================================
 import React, { useState, useEffect } from 'react';
 import { db, doc, getDoc, setDoc, addDoc, collection } from './firebase';
@@ -44,6 +45,9 @@ const BANGLA_DAYS = [
   'শনিবার',
 ];
 const MAX_DAYS_AHEAD = 7;
+
+// ✅ English name validation: only letters, spaces, dots, hyphens, apostrophes
+const ENGLISH_NAME_REGEX = /^[A-Za-z\s.\-']*$/;
 
 const getTodayString = () => {
   const date = new Date();
@@ -441,7 +445,8 @@ export default function BookingSystem({ departments, panels, onBack }) {
   const { user } = useAuth();
 
   const [formData, setFormData] = useState({
-    name: '',
+    name: '',           // kept for backward compatibility — same as nameEn
+    nameEn: '',         // ✅ Patient name (English only)
     age: '',
     mobile: '',
     gender: 'পুরুষ',
@@ -506,13 +511,59 @@ export default function BookingSystem({ departments, panels, onBack }) {
     setSelectedDoctor(null);
   }, [selectedDate, panels, departments]);
 
+  // ==================================================
+  // ✅ Keyboard handler — blocks Bengali and other non-English chars
+  // ==================================================
+  const handleNameKeyDown = (e) => {
+    // Allow control keys
+    if (
+      e.key === 'Backspace' ||
+      e.key === 'Delete' ||
+      e.key === 'Tab' ||
+      e.key === 'Enter' ||
+      e.key === 'ArrowLeft' ||
+      e.key === 'ArrowRight' ||
+      e.key === 'ArrowUp' ||
+      e.key === 'ArrowDown' ||
+      e.key === 'Home' ||
+      e.key === 'End' ||
+      e.ctrlKey ||
+      e.metaKey ||
+      e.key.length > 1
+    ) {
+      return;
+    }
+
+    // Block anything that's not A-Z, a-z, space, dot, hyphen, apostrophe
+    if (!/^[A-Za-z\s.\-']$/.test(e.key)) {
+      e.preventDefault();
+    }
+  };
+
+  // ==================================================
+  // ✅ Paste handler — blocks non-English pasted content
+  // ==================================================
+  const handleNamePaste = (e) => {
+    const pasted = (e.clipboardData || window.clipboardData).getData('text');
+    if (!ENGLISH_NAME_REGEX.test(pasted)) {
+      e.preventDefault();
+      alert('শুধু ইংরেজি অক্ষরে নাম paste করুন');
+    }
+  };
+
   const handleChange = (e) => {
     const { name, value } = e.target;
+
     if (name === 'age') {
       setFormData((prev) => ({ ...prev, [name]: toEnglishDigits(value) }));
+    } else if (name === 'nameEn') {
+      // ✅ Catch-all: strip any non-English chars (handles IME, voice input, autocomplete)
+      const cleaned = value.replace(/[^A-Za-z\s.\-']/g, '');
+      setFormData((prev) => ({ ...prev, [name]: cleaned }));
     } else {
       setFormData((prev) => ({ ...prev, [name]: value }));
     }
+
     if (name === 'departmentId') setSelectedDoctor(null);
     setSuccessMsg('');
   };
@@ -520,6 +571,7 @@ export default function BookingSystem({ departments, panels, onBack }) {
   const resetForm = () => {
     setFormData({
       name: '',
+      nameEn: '',
       age: '',
       mobile: '',
       gender: 'পুরুষ',
@@ -544,7 +596,10 @@ export default function BookingSystem({ departments, panels, onBack }) {
     setSuccessMsg('');
     try {
       // ---------- Validation ----------
-      if (!formData.name.trim()) throw new Error('রোগীর নাম লিখুন');
+      if (!formData.nameEn.trim()) throw new Error('রোগীর নাম লিখুন');
+      if (!/^[A-Za-z\s.\-']+$/.test(formData.nameEn.trim())) {
+        throw new Error('রোগীর নাম শুধু ইংরেজি অক্ষরে লিখুন');
+      }
       if (!formData.age.trim()) throw new Error('বয়স লিখুন');
       if (!formData.mobile.trim()) throw new Error('মোবাইল নম্বর লিখুন');
       if (formData.mobile.length < 10)
@@ -559,6 +614,8 @@ export default function BookingSystem({ departments, panels, onBack }) {
       // ==================================================
       // ১. Patient তৈরি / খোঁজ
       // ==================================================
+      const patientName = formData.nameEn.trim();
+
       let patient = await findPatientByMobile(hospitalId, formData.mobile);
       let patientId;
       let isNewPatient = true;
@@ -573,7 +630,8 @@ export default function BookingSystem({ departments, panels, onBack }) {
         });
       } else {
         const newPatient = await createPatient(hospitalId, {
-          name: formData.name,
+          name: patientName,
+          nameEn: patientName,
           mobile: formData.mobile,
           age: formData.age,
           gender: formData.gender,
@@ -632,6 +690,9 @@ export default function BookingSystem({ departments, panels, onBack }) {
       // ==================================================
       const appointmentData = {
         ...formData,
+        name: patientName,
+        nameEn: patientName,
+        doctorNameEn: selectedDoctor.nameEn || '',
         patientId,
         doctorId: selectedDoctor.id,
         doctorName: selectedDoctor.name,
@@ -708,9 +769,6 @@ export default function BookingSystem({ departments, panels, onBack }) {
       <style>{BookingCSS}</style>
       <div className="booking-card">
         {isBooked ? (
-          /* ==================================================
-             ✅ SUCCESS SCREEN — Fixed
-             ================================================== */
           <div className="success-screen">
             <div className="lottie-container">
               <svg
@@ -769,9 +827,6 @@ export default function BookingSystem({ departments, panels, onBack }) {
             </div>
           </div>
         ) : (
-          /* ==================================================
-             BOOKING FORM
-             ================================================== */
           <form onSubmit={handleSubmit}>
             <h2 className="booking-title">রোগীর ডাক্তার বুকিং ফর্ম</h2>
 
@@ -797,6 +852,8 @@ export default function BookingSystem({ departments, panels, onBack }) {
                 <User size={18} /> রোগীর তথ্য{' '}
                 <span className="required-asterisk">*</span>
               </div>
+
+              {/* ✅ Only English name field with strict validation */}
               <div className="form-group">
                 <label>
                   রোগীর নাম <span className="required-asterisk">*</span>
@@ -804,13 +861,20 @@ export default function BookingSystem({ departments, panels, onBack }) {
                 <input
                   type="text"
                   className="input"
-                  name="name"
-                  value={formData.name}
+                  name="nameEn"
+                  value={formData.nameEn}
                   onChange={handleChange}
+                  onKeyDown={handleNameKeyDown}
+                  onPaste={handleNamePaste}
                   required
-                  placeholder="আপনার পুরো নাম"
+                  placeholder="যেমন: Abdullah Mamun"
+                  autoComplete="off"
                 />
+                <p style={{ fontSize: '11.5px', color: '#94a3b8', margin: '4px 0 0 0' }}>
+                  শুধু ইংরেজি অক্ষরে নাম লিখুন
+                </p>
               </div>
+
               <div className="form-group">
                 <label>
                   বয়স (বাংলা বা ইংরেজি সংখ্যায়){' '}
@@ -827,7 +891,6 @@ export default function BookingSystem({ departments, panels, onBack }) {
                 />
               </div>
 
-              {/* ✅ Bangladesh Mobile Number Input */}
               <BangladeshMobileInput
                 value={formData.mobile}
                 onChange={(val) =>
@@ -1054,7 +1117,7 @@ export default function BookingSystem({ departments, panels, onBack }) {
               </div>
               <div className="summary-row">
                 <span className="summary-label">রোগীর নাম:</span>
-                <span className="summary-value">{formData.name || '-'}</span>
+                <span className="summary-value">{formData.nameEn || '-'}</span>
               </div>
               <div className="summary-row">
                 <span className="summary-label">মোবাইল:</span>

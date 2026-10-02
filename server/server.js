@@ -2,6 +2,13 @@
 // ==================================================
 // 🏥 আল-আফিয়া হাসপাতাল — Backend Server
 // ==================================================
+// ✅ WhatsApp via Baileys
+// ✅ SMS via sms.net.bd (English only)
+// ✅ Email via Gmail
+// ✅ FCM Push Notifications
+// ✅ Uses nameEn / doctorNameEn (no transliteration needed)
+// ✅ Custom Confirm Message API
+// ==================================================
 require('dotenv').config();
 const express = require('express');
 const makeWASocket = require('@whiskeysockets/baileys').default;
@@ -14,9 +21,6 @@ const pino = require('pino');
 const qrcode = require('qrcode-terminal');
 const nodemailer = require('nodemailer');
 const axios = require('axios');
-
-// ✅ Import transliteration helper
-const { transliterateToEnglish } = require('./transliterate');
 
 // ---------- Firebase Admin ----------
 const { initializeApp, cert } = require('firebase-admin/app');
@@ -333,10 +337,11 @@ async function sendHospitalNotification(data, appointmentId) {
   const jid = HOSPITAL_WHATSAPP + '@s.whatsapp.net';
   const formattedDate = formatDateDDMMYYYY(data.bookingDate);
 
-  const englishPatientName = transliterateToEnglish(data.name || '');
-  const englishDoctorName = transliterateToEnglish(data.doctorName || '');
-  const englishDoctorDept = transliterateToEnglish(data.doctorDept || '');
-  const englishAddress = transliterateToEnglish(data.address || '');
+  // ✅ Use English fields directly (no transliteration)
+  const englishPatientName = data.nameEn || data.name || '';
+  const englishDoctorName = data.doctorNameEn || data.doctorName || '';
+  const englishDoctorDept = data.doctorDept || '';
+  const englishAddress = data.address || '';
 
   const msg = `New Booking Alert
 
@@ -373,8 +378,9 @@ Admin confirm korle patient SMS/Email pabe.`;
 // 🆕 TRIGGER 2: Admin Confirm → Patient SMS + Email + In-App + FCM
 // ==================================================
 async function sendPatientConfirmation(data, appointmentId) {
-  const englishPatientName = transliterateToEnglish(data.name || '');
-  const englishDoctorName = transliterateToEnglish(data.doctorName || '');
+  // ✅ Use English fields directly (no transliteration)
+  const englishPatientName = data.nameEn || data.name || '';
+  const englishDoctorName = data.doctorNameEn || data.doctorName || '';
 
   const formattedDate = formatDateDDMMYYYY(data.bookingDate);
   const serial = data.serialNo || '';
@@ -562,7 +568,8 @@ app.post('/api/queue/next', async (req, res) => {
       fcmTokens = [userData.fcmToken];
     }
 
-    const englishDoctorName = transliterateToEnglish(appointment.doctorName || '');
+    // ✅ Use English doctor name
+    const englishDoctorName = appointment.doctorNameEn || appointment.doctorName || '';
 
     let fcmResult = { success: false, error: 'No FCM token' };
     if (fcmTokens.length > 0) {
@@ -780,7 +787,7 @@ app.get('/', (req, res) => {
 });
 
 // ==================================================
-// 🔥 FIREBASE লিসেনার
+// 🔥 FIREBASE লিসেনার — Auto-trigger on pending → confirmed
 // ==================================================
 const previousStatuses = new Map();
 const appointmentsPath = `hospitals/${HOSPITAL_ID}/appointments`;
@@ -883,8 +890,10 @@ app.listen(PORT, () => {
   console.log(`🌐 CORS allowed origins: ${ALLOWED_ORIGINS.join(', ')}\n`);
 });
 
+// ---------- WhatsApp কানেকশন শুরু ----------
 connectToWhatsApp();
 
+// ---------- Graceful Shutdown ----------
 process.on('SIGINT', () => {
   console.log('\n\n🛑 Server shutting down...');
   if (sock) {

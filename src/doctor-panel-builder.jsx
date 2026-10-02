@@ -59,7 +59,16 @@ const timeToMinutes = (timeStr) => {
 };
 
 function makeDoctor(overrides) {
-  return { id: uid(), name: '', quals: '', specialty: '', workplace: '', timeSlots: [], ...(overrides || {}) };
+  return {
+    id: uid(),
+    name: '',
+    nameEn: '',           // ✅ NEW: English name (for SMS/Email, not shown in UI)
+    quals: '',
+    specialty: '',
+    workplace: '',
+    timeSlots: [],
+    ...(overrides || {}),
+  };
 }
 function makeDepartment(overrides) { return { id: uid(), name: '', icon: 'Stethoscope', color: COLOR_THEMES[0], doctors: [], ...(overrides || {}) }; }
 
@@ -687,8 +696,12 @@ function DepartmentModal({ initial, onSave, onClose }) {
   );
 }
 
+// ==================================================
+// ✅ Doctor Modal (Updated with English Name field)
+// ==================================================
 function DoctorModal({ initial, onSave, onClose }) {
   const [name, setName] = useState(initial ? initial.name : '');
+  const [nameEn, setNameEn] = useState(initial ? initial.nameEn || '' : '');
   const [quals, setQuals] = useState(initial ? initial.quals : '');
   const [specialty, setSpecialty] = useState(initial ? initial.specialty : '');
   const [workplace, setWorkplace] = useState(initial ? initial.workplace : '');
@@ -754,7 +767,14 @@ function DoctorModal({ initial, onSave, onClose }) {
     });
     if (hasError) { setSlotErrors(errors); alert('সময় স্লটে ত্রুটি আছে। অনুগ্রহ করে ঠিক করুন।'); return; }
     const cleanedSlots = timeSlots.map((slot) => ({ start: standardizeTime(slot.start), end: standardizeTime(slot.end) }));
-    onSave({ name: name.trim(), quals, specialty, workplace, timeSlots: cleanedSlots });
+    onSave({
+      name: name.trim(),
+      nameEn: nameEn.trim(),
+      quals,
+      specialty,
+      workplace,
+      timeSlots: cleanedSlots,
+    });
   };
 
   const inputBaseStyle = {
@@ -770,9 +790,23 @@ function DoctorModal({ initial, onSave, onClose }) {
           <button className="icon-btn" onClick={onClose}><X size={18} /></button>
         </div>
         <div className="modal-body">
-          <label>ডাক্তারের নাম</label>
+          <label>ডাক্তারের নাম (বাংলা)</label>
           <input className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="যেমনঃ ডাঃ মোহাম্মদ নূর" />
-          <label>শিক্ষাগত যোগ্যতা / ডিগ্রি</label>
+
+          <label style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            ডাক্তারের নাম (English)
+            <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: '400' }}>
+              (SMS/Email-এ ব্যবহৃত হবে, UI-তে দেখাবে না)
+            </span>
+          </label>
+          <input
+            className="input"
+            value={nameEn}
+            onChange={(e) => setNameEn(e.target.value)}
+            placeholder="যেমনঃ Dr. Mohammad Nur"
+          />
+
+          <label style={{ marginTop: '12px' }}>শিক্ষাগত যোগ্যতা / ডিগ্রি</label>
           <textarea className="textarea" rows={3} value={quals} onChange={(e) => setQuals(e.target.value)} placeholder="প্রতি লাইনে একটি করে ডিগ্রি লিখুন" />
           <label>বিশেষত্ব</label>
           <textarea className="textarea" rows={2} value={specialty} onChange={(e) => setSpecialty(e.target.value)} placeholder="যেমনঃ মেডিসিন বিশেষজ্ঞ" />
@@ -1080,9 +1114,6 @@ export default function DoctorPanelBuilder() {
   const hospitalId = currentHospital?.id || 'alafiyah_main';
   const { user, logout } = useAuth();
 
-  // ==================================================
-  // ✅ Role flags — isModerator যোগ করা হয়েছে
-  // ==================================================
   const isAdmin = user?.role === 'admin';
   const isSubAdmin = user?.role === 'sub-admin';
   const isEditor = user?.role === 'editor';
@@ -1389,9 +1420,6 @@ export default function DoctorPanelBuilder() {
   };
   const handleRefreshData = () => setReloadKey(prev => prev + 1);
 
-  // ==================================================
-  // ✅ Authorized path check — isModerator যোগ করা হয়েছে
-  // ==================================================
   const getIsAuthorized = () => {
     if (path === '/' || path === '/booking' || path === '/display' || path === '/preview' || path === '/login') return true;
     if (path === '/edit' && (isEditor || isModerator || isSubAdmin || isAdmin)) return true;
