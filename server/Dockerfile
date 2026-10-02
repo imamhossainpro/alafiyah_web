@@ -1,16 +1,23 @@
 # server/Dockerfile
 FROM node:20-slim
 
+# ✅ Install git + build tools (Baileys-এর libsignal git থেকে আসে)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-# Copy only package.json (do NOT copy lockfile to avoid version conflicts)
+# Copy only package.json
 COPY package.json ./
 
-# Install exact versions — no lockfile, no cache
-RUN rm -rf node_modules package-lock.json && \
-    npm install --production --no-package-lock
+# ✅ --omit=dev (not --production), and NO --no-package-lock
+RUN npm install --omit=dev --no-audit --no-fund
 
-# Copy the rest of the source
+# Copy source
 COPY . .
 
 EXPOSE 3001
