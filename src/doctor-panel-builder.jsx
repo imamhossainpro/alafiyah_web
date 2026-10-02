@@ -5,10 +5,11 @@ import { AppShellSkeleton } from './components/ui/SkeletonScreens';
 import {
   Plus, Ear, Trash2, Pencil, Printer, X, ChevronUp, ChevronDown, ChevronLeft, MapPin, Globe, Phone, Loader2,
   Stethoscope, Scissors, Heart, Baby, Bone, Syringe, Pill, Activity, Brain, Eye, Utensils, Smile, Sparkles, User, Droplet, Thermometer, LogOut,
-  CheckCircle, XCircle, RefreshCw,
+  CheckCircle, XCircle, RefreshCw, Link as LinkIcon, Copy, QrCode, Check, Camera, Upload,
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import QRCode from 'qrcode';
 import { db, doc, getDoc, setDoc, getDocs, collection, deleteDoc, updateDoc, query, where, writeBatch } from './firebase';
 import BookingSystem from './BookingSystem';
 import AdminDashboard from './components/AdminDashboard';
@@ -62,11 +63,12 @@ function makeDoctor(overrides) {
   return {
     id: uid(),
     name: '',
-    nameEn: '',           // ✅ NEW: English name (for SMS/Email, not shown in UI)
+    nameEn: '',
     quals: '',
     specialty: '',
     workplace: '',
     timeSlots: [],
+    imageUrl: '',
     ...(overrides || {}),
   };
 }
@@ -95,127 +97,28 @@ const CSS = `
 .dpb .topbar-right{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
 .dpb .save-indicator{font-size:12.5px;color:#6b7280;white-space:nowrap;}
 
-.dpb .logout-btn{
-  background:#dc2626;
-  color:#fff;
-  border:none;
-  border-radius:12px;
-  padding:8px 14px;
-  font-size:12.5px;
-  font-weight:600;
-  display:flex;
-  align-items:center;
-  gap:5px;
-  cursor:pointer;
-  box-shadow:0 3px 10px rgba(220,38,38,0.30);
-  transition:all 0.2s ease;
-}
-.dpb .logout-btn:hover{
-  background:#b91c1c;
-  transform:translateY(-1px);
-  box-shadow:0 5px 14px rgba(220,38,38,0.40);
-}
+.dpb .logout-btn{background:#dc2626;color:#fff;border:none;border-radius:12px;padding:8px 14px;font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:5px;cursor:pointer;box-shadow:0 3px 10px rgba(220,38,38,0.30);transition:all 0.2s ease;}
+.dpb .logout-btn:hover{background:#b91c1c;transform:translateY(-1px);box-shadow:0 5px 14px rgba(220,38,38,0.40);}
 
-.dpb .login-btn{
-  background:#1c5fa8;
-  color:#fff;
-  border:none;
-  border-radius:12px;
-  padding:8px 14px;
-  font-size:12.5px;
-  font-weight:600;
-  display:flex;
-  align-items:center;
-  gap:5px;
-  cursor:pointer;
-  box-shadow:0 3px 10px rgba(28,95,168,0.30);
-  transition:all 0.2s ease;
-}
-.dpb .login-btn:hover{
-  background:#154a82;
-  transform:translateY(-1px);
-  box-shadow:0 5px 14px rgba(28,95,168,0.40);
-}
+.dpb .login-btn{background:#1c5fa8;color:#fff;border:none;border-radius:12px;padding:8px 14px;font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:5px;cursor:pointer;box-shadow:0 3px 10px rgba(28,95,168,0.30);transition:all 0.2s ease;}
+.dpb .login-btn:hover{background:#154a82;transform:translateY(-1px);box-shadow:0 5px 14px rgba(28,95,168,0.40);}
 
 .dpb .tabs{display:flex;background:transparent;border-radius:12px;padding:3px;gap:6px;flex-wrap:wrap;}
-.dpb .tab{
-  border:none;
-  background:#f1f5f9;
-  padding:9px 16px;
-  border-radius:12px;
-  font-size:13.5px;
-  font-weight:600;
-  color:#64748b;
-  cursor:pointer;
-  transition:all 0.2s ease;
-  box-shadow:0 1px 3px rgba(0,0,0,0.05);
-}
-.dpb .tab:hover{
-  background:#e2e8f0;
-  color:#334155;
-  box-shadow:0 2px 6px rgba(0,0,0,0.08);
-}
-
-.dpb .tab.active{
-  background:#1c5fa8;
-  color:#fff;
-  box-shadow:0 4px 12px rgba(28,95,168,0.35);
-}
-
-.dpb .tab.booking-tab{
-  background:linear-gradient(45deg,#0d9488,#14b8a6);
-  color:#fff;
-  font-weight:700;
-  display:flex;
-  align-items:center;
-  gap:6px;
-  border-radius:12px;
-  box-shadow:0 4px 12px rgba(13,148,136,0.35);
-  transition:all 0.3s ease;
-}
-.dpb .tab.booking-tab:hover{
-  background:linear-gradient(45deg,#0f766e,#0d9488);
-  box-shadow:0 6px 16px rgba(13,148,136,0.45);
-  transform:translateY(-1px);
-}
-.dpb .tab.booking-tab.active{
-  background:linear-gradient(45deg,#0f766e,#14b8a6);
-  box-shadow:0 6px 16px rgba(13,148,136,0.55);
-  border:1px solid rgba(255,255,255,0.2);
-}
+.dpb .tab{border:none;background:#f1f5f9;padding:9px 16px;border-radius:12px;font-size:13.5px;font-weight:600;color:#64748b;cursor:pointer;transition:all 0.2s ease;box-shadow:0 1px 3px rgba(0,0,0,0.05);}
+.dpb .tab:hover{background:#e2e8f0;color:#334155;box-shadow:0 2px 6px rgba(0,0,0,0.08);}
+.dpb .tab.active{background:#1c5fa8;color:#fff;box-shadow:0 4px 12px rgba(28,95,168,0.35);}
+.dpb .tab.booking-tab{background:linear-gradient(45deg,#0d9488,#14b8a6);color:#fff;font-weight:700;display:flex;align-items:center;gap:6px;border-radius:12px;box-shadow:0 4px 12px rgba(13,148,136,0.35);transition:all 0.3s ease;}
+.dpb .tab.booking-tab:hover{background:linear-gradient(45deg,#0f766e,#0d9488);box-shadow:0 6px 16px rgba(13,148,136,0.45);transform:translateY(-1px);}
+.dpb .tab.booking-tab.active{background:linear-gradient(45deg,#0f766e,#14b8a6);box-shadow:0 6px 16px rgba(13,148,136,0.55);border:1px solid rgba(255,255,255,0.2);}
 .dpb .tab.booking-tab svg{animation:pulse-booking 2s infinite;}
 @keyframes pulse-booking{0%,100%{transform:scale(1);}50%{transform:scale(1.1);}}
 
 .dpb .panel-switcher{display:flex;align-items:center;gap:10px;padding:10px 20px;background:#fff;border-bottom:1px solid #e2e6ee;flex-wrap:wrap;position:relative;z-index:18;}
 .dpb .panel-switcher-scroll{display:flex;gap:6px;flex-wrap:wrap;flex:1;min-width:0;}
 
-.dpb .panel-pill{
-  display:flex;
-  align-items:center;
-  border:1px solid #e2e6ee;
-  background:#fff;
-  padding:5px 10px;
-  border-radius:20px;
-  font-size:13px;
-  font-weight:600;
-  color:#1f2937;
-  cursor:pointer;
-  transition:all 0.2s ease;
-  gap:4px;
-  box-shadow:0 1px 3px rgba(0,0,0,0.04);
-}
-.dpb .panel-pill:hover{
-  border-color:#1c5fa8;
-  color:#1c5fa8;
-  transform:translateY(-1px);
-  box-shadow:0 3px 8px rgba(28,95,168,0.15);
-}
-.dpb .panel-pill.active{
-  background:#1c5fa8;
-  color:#fff;
-  border-color:#1c5fa8;
-  box-shadow:0 4px 10px rgba(28,95,168,0.35);
-}
+.dpb .panel-pill{display:flex;align-items:center;border:1px solid #e2e6ee;background:#fff;padding:5px 10px;border-radius:20px;font-size:13px;font-weight:600;color:#1f2937;cursor:pointer;transition:all 0.2s ease;gap:4px;box-shadow:0 1px 3px rgba(0,0,0,0.04);}
+.dpb .panel-pill:hover{border-color:#1c5fa8;color:#1c5fa8;transform:translateY(-1px);box-shadow:0 3px 8px rgba(28,95,168,0.15);}
+.dpb .panel-pill.active{background:#1c5fa8;color:#fff;border-color:#1c5fa8;box-shadow:0 4px 10px rgba(28,95,168,0.35);}
 .dpb .panel-pill-label{background:transparent;border:none;font-weight:600;font-size:13px;color:inherit;cursor:pointer;}
 .dpb .panel-pill-icon{background:transparent;border:none;display:flex;align-items:center;gap:2px;color:inherit;cursor:pointer;font-size:11px;font-weight:600;padding:2px 4px;border-radius:8px;transition:background 0.2s;}
 .dpb .panel-pill-icon:hover{background:rgba(28,95,168,0.15);}
@@ -234,22 +137,8 @@ const CSS = `
 .dpb .section-hint{font-size:12.5px;color:#6b7280;margin:4px 0 10px;}
 
 .dpb .day-buttons{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 10px;}
-.dpb .day-btn{
-  border:1px solid #e2e6ee;
-  background:#fff;
-  padding:7px 14px;
-  border-radius:20px;
-  font-size:12.5px;
-  color:#1f2937;
-  transition:all 0.2s ease;
-  box-shadow:0 1px 2px rgba(0,0,0,0.04);
-}
-.dpb .day-btn:hover{
-  border-color:#1c5fa8;
-  color:#1c5fa8;
-  transform:translateY(-1px);
-  box-shadow:0 3px 8px rgba(28,95,168,0.15);
-}
+.dpb .day-btn{border:1px solid #e2e6ee;background:#fff;padding:7px 14px;border-radius:20px;font-size:12.5px;color:#1f2937;transition:all 0.2s ease;box-shadow:0 1px 2px rgba(0,0,0,0.04);}
+.dpb .day-btn:hover{border-color:#1c5fa8;color:#1c5fa8;transform:translateY(-1px);box-shadow:0 3px 8px rgba(28,95,168,0.15);}
 
 .dpb .input,.dpb .textarea{width:100%;border:1px solid #e2e6ee;border-radius:10px;padding:10px 14px;font-size:14px;font-family:inherit;color:#1f2937;background:#fff;transition:all 0.2s;}
 .dpb .input:focus,.dpb .textarea:focus{outline:none;border-color:#1c5fa8;box-shadow:0 0 0 3px rgba(28,95,168,0.14);}
@@ -260,103 +149,22 @@ const CSS = `
 .dpb .checkbox-row{display:flex;align-items:center;gap:8px;font-size:13px;color:#1f2937;cursor:pointer;font-weight:500;}
 .dpb .checkbox-row input{width:16px;height:16px;cursor:pointer;flex-shrink:0;}
 
-.dpb .btn{
-  display:inline-flex;
-  align-items:center;
-  gap:6px;
-  border:none;
-  border-radius:12px;
-  padding:9px 16px;
-  font-size:13.5px;
-  font-weight:600;
-  white-space:nowrap;
-  transition:all 0.2s ease;
-}
+.dpb .btn{display:inline-flex;align-items:center;gap:6px;border:none;border-radius:12px;padding:9px 16px;font-size:13.5px;font-weight:600;white-space:nowrap;transition:all 0.2s ease;}
+.dpb .btn-primary{background:#1c5fa8;color:#fff;box-shadow:0 3px 10px rgba(28,95,168,0.30);}
+.dpb .btn-primary:hover{background:#154a82;transform:translateY(-1px);box-shadow:0 5px 14px rgba(28,95,168,0.40);}
+.dpb .btn-primary:disabled{background:#b9c9dd;cursor:not-allowed;box-shadow:none;transform:none;}
+.dpb .btn-secondary{background:#eef1f7;color:#1f2937;box-shadow:0 2px 6px rgba(0,0,0,0.06);}
+.dpb .btn-secondary:hover{background:#e2e6ee;transform:translateY(-1px);box-shadow:0 4px 10px rgba(0,0,0,0.10);}
+.dpb .btn-danger{background:#dc2626;color:#fff;box-shadow:0 3px 10px rgba(220,38,38,0.30);}
+.dpb .btn-danger:hover{background:#b91c1c;transform:translateY(-1px);box-shadow:0 5px 14px rgba(220,38,38,0.40);}
+.dpb .btn-outline{background:#fff;border:1px solid #e2e6ee;color:#1f2937;box-shadow:0 1px 3px rgba(0,0,0,0.04);}
+.dpb .btn-outline:hover{border-color:#cbd5e1;box-shadow:0 3px 8px rgba(0,0,0,0.08);transform:translateY(-1px);}
 
-.dpb .btn-primary{
-  background:#1c5fa8;
-  color:#fff;
-  box-shadow:0 3px 10px rgba(28,95,168,0.30);
-}
-.dpb .btn-primary:hover{
-  background:#154a82;
-  transform:translateY(-1px);
-  box-shadow:0 5px 14px rgba(28,95,168,0.40);
-}
-.dpb .btn-primary:disabled{
-  background:#b9c9dd;
-  cursor:not-allowed;
-  box-shadow:none;
-  transform:none;
-}
+.dpb .toggle-all-btn{background:#1c5fa8;color:#fff;border:none;border-radius:20px;padding:5px 16px;font-size:12px;font-weight:600;cursor:pointer;transition:all 0.2s ease;box-shadow:0 2px 8px rgba(28,95,168,0.30);}
+.dpb .toggle-all-btn:hover{background:#154a82;transform:translateY(-1px);box-shadow:0 4px 12px rgba(28,95,168,0.40);}
 
-.dpb .btn-secondary{
-  background:#eef1f7;
-  color:#1f2937;
-  box-shadow:0 2px 6px rgba(0,0,0,0.06);
-}
-.dpb .btn-secondary:hover{
-  background:#e2e6ee;
-  transform:translateY(-1px);
-  box-shadow:0 4px 10px rgba(0,0,0,0.10);
-}
-
-.dpb .btn-danger{
-  background:#dc2626;
-  color:#fff;
-  box-shadow:0 3px 10px rgba(220,38,38,0.30);
-}
-.dpb .btn-danger:hover{
-  background:#b91c1c;
-  transform:translateY(-1px);
-  box-shadow:0 5px 14px rgba(220,38,38,0.40);
-}
-
-.dpb .btn-outline{
-  background:#fff;
-  border:1px solid #e2e6ee;
-  color:#1f2937;
-  box-shadow:0 1px 3px rgba(0,0,0,0.04);
-}
-.dpb .btn-outline:hover{
-  border-color:#cbd5e1;
-  box-shadow:0 3px 8px rgba(0,0,0,0.08);
-  transform:translateY(-1px);
-}
-
-.dpb .toggle-all-btn{
-  background:#1c5fa8;
-  color:#fff;
-  border:none;
-  border-radius:20px;
-  padding:5px 16px;
-  font-size:12px;
-  font-weight:600;
-  cursor:pointer;
-  transition:all 0.2s ease;
-  box-shadow:0 2px 8px rgba(28,95,168,0.30);
-}
-.dpb .toggle-all-btn:hover{
-  background:#154a82;
-  transform:translateY(-1px);
-  box-shadow:0 4px 12px rgba(28,95,168,0.40);
-}
-
-.dpb .dept-toggle-btn{
-  background:transparent;
-  border:1.5px solid #1c5fa8;
-  color:#1c5fa8;
-  border-radius:20px;
-  padding:3px 12px;
-  font-size:11px;
-  font-weight:600;
-  cursor:pointer;
-  transition:all 0.2s ease;
-}
-.dpb .dept-toggle-btn:hover{
-  background:#eaf2fb;
-  box-shadow:0 2px 6px rgba(28,95,168,0.15);
-}
+.dpb .dept-toggle-btn{background:transparent;border:1.5px solid #1c5fa8;color:#1c5fa8;border-radius:20px;padding:3px 12px;font-size:11px;font-weight:600;cursor:pointer;transition:all 0.2s ease;}
+.dpb .dept-toggle-btn:hover{background:#eaf2fb;box-shadow:0 2px 6px rgba(28,95,168,0.15);}
 
 .dpb .dept-card{border:1px solid #e2e6ee;border-left:5px solid #ccc;border-radius:14px;margin-bottom:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.03);}
 .dpb .dept-card-header{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:#fafbfd;flex-wrap:wrap;gap:8px;}
@@ -366,35 +174,12 @@ const CSS = `
 .dpb .dept-doctor-count{font-size:11.5px;color:#6b7280;background:#eef1f7;padding:3px 10px;border-radius:20px;}
 .dpb .dept-card-actions{display:flex;gap:4px;}
 
-.dpb .icon-btn{
-  background:transparent;
-  border:1px solid transparent;
-  border-radius:8px;
-  width:32px;
-  height:32px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  color:#6b7280;
-  flex-shrink:0;
-  transition:all 0.2s ease;
-}
-.dpb .icon-btn:hover{
-  background:#eef1f7;
-  color:#1f2937;
-  box-shadow:0 2px 6px rgba(0,0,0,0.08);
-}
+.dpb .icon-btn{background:transparent;border:1px solid transparent;border-radius:8px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;color:#6b7280;flex-shrink:0;transition:all 0.2s ease;}
+.dpb .icon-btn:hover{background:#eef1f7;color:#1f2937;box-shadow:0 2px 6px rgba(0,0,0,0.08);}
 .dpb .icon-btn:disabled{opacity:0.35;cursor:not-allowed;box-shadow:none;}
-
-.dpb .icon-btn.danger-confirm{
-  background:#dc2626;
-  color:#fff;
-  width:auto;
-  padding:0 12px;
-  font-size:11px;
-  font-weight:700;
-  box-shadow:0 2px 8px rgba(220,38,38,0.30);
-}
+.dpb .icon-btn.danger-confirm{background:#dc2626;color:#fff;width:auto;padding:0 12px;font-size:11px;font-weight:700;box-shadow:0 2px 8px rgba(220,38,38,0.30);}
+.dpb .icon-btn.link-btn{color:#0891b2;}
+.dpb .icon-btn.link-btn:hover{background:#cffafe;color:#0e7490;}
 
 .dpb .doctor-mini-list{padding:4px 14px 12px;}
 .dpb .doctor-row{display:flex;align-items:center;justify-content:space-between;padding:9px 4px;border-top:1px dashed #e2e6ee;gap:10px;}
@@ -406,27 +191,8 @@ const CSS = `
 .dpb .doctor-row-time-slot-item{background:#fef3c7;padding:3px 12px;border-radius:12px;display:inline-block;width:fit-content;}
 .dpb .doctor-row-actions{display:flex;gap:2px;flex-shrink:0;}
 
-.dpb .add-doctor-btn{
-  display:flex;
-  align-items:center;
-  gap:6px;
-  width:100%;
-  justify-content:center;
-  border:1.5px dashed #e2e6ee;
-  background:transparent;
-  border-radius:10px;
-  padding:10px;
-  font-size:12.5px;
-  color:#6b7280;
-  margin-top:6px;
-  transition:all 0.2s ease;
-}
-.dpb .add-doctor-btn:hover{
-  border-color:#1c5fa8;
-  color:#1c5fa8;
-  background:#f0f7ff;
-  box-shadow:0 2px 8px rgba(28,95,168,0.10);
-}
+.dpb .add-doctor-btn{display:flex;align-items:center;gap:6px;width:100%;justify-content:center;border:1.5px dashed #e2e6ee;background:transparent;border-radius:10px;padding:10px;font-size:12.5px;color:#6b7280;margin-top:6px;transition:all 0.2s ease;}
+.dpb .add-doctor-btn:hover{border-color:#1c5fa8;color:#1c5fa8;background:#f0f7ff;box-shadow:0 2px 8px rgba(28,95,168,0.10);}
 
 .dpb .empty-state{text-align:center;color:#6b7280;font-size:13px;padding:20px;}
 
@@ -444,29 +210,10 @@ const CSS = `
 .dpb .modal-footer{display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid #e2e6ee;}
 
 .dpb .icon-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;}
-.dpb .icon-choice{
-  border:1.5px solid #e2e6ee;
-  background:#fff;
-  border-radius:10px;
-  height:38px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  transition:all 0.2s ease;
-}
-.dpb .icon-choice:hover{
-  transform:translateY(-1px);
-  box-shadow:0 3px 8px rgba(0,0,0,0.08);
-}
+.dpb .icon-choice{border:1.5px solid #e2e6ee;background:#fff;border-radius:10px;height:38px;display:flex;align-items:center;justify-content:center;transition:all 0.2s ease;}
+.dpb .icon-choice:hover{transform:translateY(-1px);box-shadow:0 3px 8px rgba(0,0,0,0.08);}
 .dpb .color-grid{display:flex;flex-wrap:wrap;gap:8px;}
-.dpb .color-choice{
-  width:34px;
-  height:34px;
-  border-radius:50%;
-  border:2px solid transparent;
-  padding:0;
-  transition:all 0.2s ease;
-}
+.dpb .color-choice{width:34px;height:34px;border-radius:50%;border:2px solid transparent;padding:0;transition:all 0.2s ease;}
 .dpb .color-choice:hover{transform:scale(1.08);}
 .dpb .color-choice.selected{border-color:#1f2937;box-shadow:0 0 0 2px #fff inset;}
 
@@ -506,6 +253,21 @@ const CSS = `
 .dpb .footer-phone{display:flex;align-items:center;gap:6px;font-weight:700;font-size:20px;}
 
 .dpb .doctor-entry,.dpb .doctor-row,.dpb .doctor-name,.dpb .doctor-quals,.dpb .doctor-specialty,.dpb .doctor-workplace,.dpb .doctor-time-slots,.dpb .doctor-row-name,.dpb .doctor-row-specialty{text-align:left !important;}
+
+/* ✅ Doctor Link Modal */
+.dpb .link-modal-input{display:flex;gap:8px;align-items:center;background:#f8fafc;border:1.5px solid #e2e6ee;border-radius:10px;padding:8px 12px;font-size:13px;}
+.dpb .link-modal-input input{flex:1;border:none;background:transparent;outline:none;font-family:monospace;font-size:13px;color:#1e293b;padding:6px 0;}
+.dpb .qr-container{text-align:center;padding:20px;background:#f8fafc;border-radius:12px;border:1px dashed #cbd5e1;margin-top:16px;}
+.dpb .qr-container canvas,.dpb .qr-container img{max-width:220px;height:auto;border-radius:8px;}
+
+/* ✅ Doctor Image Upload Styles */
+.dpb .doctor-image-upload{display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
+.dpb .doctor-image-preview{width:90px;height:90px;border-radius:50%;border:2px solid #e2e6ee;overflow:hidden;background:#f8fafc;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative;}
+.dpb .doctor-image-preview img{width:100%;height:100%;object-fit:cover;}
+.dpb .doctor-image-preview .placeholder{color:#cbd5e1;}
+.dpb .doctor-thumb{width:42px;height:42px;border-radius:50%;overflow:hidden;flex-shrink:0;background:#f1f5f9;border:2px solid #e2e6ee;display:flex;align-items:center;justify-content:center;}
+.dpb .doctor-thumb img{width:100%;height:100%;object-fit:cover;}
+.dpb .doctor-thumb .placeholder{color:#94a3b8;}
 
 @media (max-width: 900px) {
   .dpb .topbar { padding: 12px 16px; gap: 10px; flex-wrap: wrap; align-items: center; position: sticky; }
@@ -619,12 +381,144 @@ function AdminPanel({ users, onApprove, onSetRole, onDeleteUser }) {
   );
 }
 
-function DoctorRow({ doc, index, total, checked, onToggleChecked, onEdit, onDelete, onMoveUp, onMoveDown, allowDelete = true, showCheckbox = true }) {
+// ==================================================
+// ✅ Doctor Link Modal — with image
+// ==================================================
+function DoctorLinkModal({ doctor, onClose }) {
+  const [copied, setCopied] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState('');
+  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://doctors.alafiyahhospital.com';
+  const linkUrl = `${baseUrl}/booking/${doctor.id}`;
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  useEffect(() => {
+    QRCode.toDataURL(linkUrl, {
+      width: 300,
+      margin: 2,
+      color: { dark: '#1c5fa8', light: '#ffffff' },
+    })
+      .then((url) => setQrDataUrl(url))
+      .catch((err) => console.error('QR error:', err));
+  }, [linkUrl]);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(linkUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      const input = document.createElement('input');
+      input.value = linkUrl;
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand('copy');
+      document.body.removeChild(input);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleDownloadQR = () => {
+    if (!qrDataUrl) return;
+    const link = document.createElement('a');
+    link.download = `qr-${doctor.nameEn || doctor.name || 'doctor'}.png`;
+    link.href = qrDataUrl;
+    link.click();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '560px' }}>
+        <div className="modal-header">
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <LinkIcon size={18} color="#0891b2" />
+            ডাক্তারের বুকিং লিংক
+          </h3>
+          <button className="icon-btn" onClick={onClose}><X size={18} /></button>
+        </div>
+        <div className="modal-body">
+          <div style={{ textAlign: 'center', marginBottom: '16px' }}>
+            <div style={{ width: '90px', height: '90px', borderRadius: '50%', overflow: 'hidden', margin: '0 auto 12px', border: '3px solid #e2e6ee', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {doctor.imageUrl ? (
+                <img src={doctor.imageUrl} alt={doctor.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                <User size={40} color="#94a3b8" />
+              )}
+            </div>
+            <div style={{ fontSize: '18px', fontWeight: '800', color: '#1c5fa8', marginBottom: '4px' }}>
+              {doctor.name}
+            </div>
+            {doctor.nameEn && (
+              <div style={{ fontSize: '13px', color: '#64748b', fontStyle: 'italic' }}>
+                {doctor.nameEn}
+              </div>
+            )}
+            {doctor.specialty && (
+              <div style={{ fontSize: '13px', color: '#9c2a7e', marginTop: '4px', fontWeight: '600' }}>
+                {doctor.specialty}
+              </div>
+            )}
+          </div>
+
+          <label style={{ display: 'block', fontSize: '12.5px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>
+            📎 বুকিং লিংক
+          </label>
+          <div className="link-modal-input">
+            <input type="text" readOnly value={linkUrl} onClick={(e) => e.target.select()} />
+            <button onClick={handleCopy} className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '12px', flexShrink: 0 }}>
+              {copied ? <><Check size={14} /> কপি হয়েছে</> : <><Copy size={14} /> কপি</>}
+            </button>
+          </div>
+
+          <p style={{ fontSize: '11.5px', color: '#94a3b8', marginTop: '8px', lineHeight: '1.5' }}>
+            💡 এই লিংক শেয়ার করলে রোগী সরাসরি এই ডাক্তারের বুকিং ফর্মে যাবে।
+          </p>
+
+          {qrDataUrl && (
+            <div className="qr-container">
+              <div style={{ fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '10px' }}>
+                📱 QR কোড (স্ক্যান করে বুক করুন)
+              </div>
+              <img src={qrDataUrl} alt="QR Code" />
+              <div style={{ marginTop: '12px' }}>
+                <button className="btn btn-secondary" onClick={handleDownloadQR} style={{ fontSize: '12.5px' }}>
+                  ⬇️ QR ডাউনলোড
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>বন্ধ করুন</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==================================================
+// ✅ DoctorRow — with thumbnail / placeholder
+// ==================================================
+function DoctorRow({ doc, index, total, checked, onToggleChecked, onEdit, onDelete, onMoveUp, onMoveDown, onShowLink, allowDelete = true, showCheckbox = true }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   useEffect(() => { if (!confirmDelete) return; const t = setTimeout(() => setConfirmDelete(false), 3000); return () => clearTimeout(t); }, [confirmDelete]);
   return (
     <div className="doctor-row" key={doc.id}>
       {showCheckbox && (<input type="checkbox" className="doctor-checkbox" checked={checked} onChange={onToggleChecked} title="প্রিভিউতে দেখাতে টিক দিন" />)}
+
+      <div className="doctor-thumb">
+        {doc.imageUrl ? (
+          <img src={doc.imageUrl} alt={doc.name} />
+        ) : (
+          <span className="placeholder"><User size={22} /></span>
+        )}
+      </div>
+
       <div className="doctor-row-info">
         <div className="doctor-row-name">{doc.name || 'নামহীন ডাক্তার'}</div>
         {doc.specialty ? <div className="doctor-row-specialty">{doc.specialty}</div> : null}
@@ -639,6 +533,7 @@ function DoctorRow({ doc, index, total, checked, onToggleChecked, onEdit, onDele
       <div className="doctor-row-actions">
         {onMoveUp && <button className="icon-btn" onClick={onMoveUp} disabled={index === 0} title="উপরে সরান"><ChevronUp size={14} /></button>}
         {onMoveDown && <button className="icon-btn" onClick={onMoveDown} disabled={index === total - 1} title="নিচে সরান"><ChevronDown size={14} /></button>}
+        {onShowLink && <button className="icon-btn link-btn" onClick={onShowLink} title="বুকিং লিংক দেখান"><LinkIcon size={14} /></button>}
         <button className="icon-btn" onClick={onEdit} title="সম্পাদনা"><Pencil size={14} /></button>
         {allowDelete && (<button className={confirmDelete ? 'icon-btn danger-confirm' : 'icon-btn'} onClick={() => (confirmDelete ? onDelete() : setConfirmDelete(true))} title="মুছুন">{confirmDelete ? 'নিশ্চিত?' : <Trash2 size={14} />}</button>)}
       </div>
@@ -646,7 +541,7 @@ function DoctorRow({ doc, index, total, checked, onToggleChecked, onEdit, onDele
   );
 }
 
-function DepartmentCard({ dept, index, total, checkedIds, onEdit, onDelete, onMoveUp, onMoveDown, onAddDoctor, onEditDoctor, onDeleteDoctor, onMoveDoctorUp, onMoveDoctorDown, onToggleDoctorChecked, onToggleAllChecked, allowDeptDelete = true, allowDoctorDelete = true, showCheckbox = true, showSelectAll = true }) {
+function DepartmentCard({ dept, index, total, checkedIds, onEdit, onDelete, onMoveUp, onMoveDown, onAddDoctor, onEditDoctor, onDeleteDoctor, onMoveDoctorUp, onMoveDoctorDown, onToggleDoctorChecked, onToggleAllChecked, onShowDoctorLink, allowDeptDelete = true, allowDoctorDelete = true, showCheckbox = true, showSelectAll = true }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   useEffect(() => { if (!confirmDelete) return; const t = setTimeout(() => setConfirmDelete(false), 3000); return () => clearTimeout(t); }, [confirmDelete]);
   const Icon = ICONS[dept.icon] || ICONS.Stethoscope;
@@ -673,6 +568,7 @@ function DepartmentCard({ dept, index, total, checkedIds, onEdit, onDelete, onMo
           <DoctorRow key={doc.id} doc={doc} index={di} total={dept.doctors?.length || 0} checked={checkedIds.has(doc.id)}
             onToggleChecked={() => onToggleDoctorChecked(doc.id)} onEdit={() => onEditDoctor(doc)}
             onDelete={() => onDeleteDoctor(doc.id)} onMoveUp={() => onMoveDoctorUp(doc.id)} onMoveDown={() => onMoveDoctorDown(doc.id)}
+            onShowLink={onShowDoctorLink ? () => onShowDoctorLink(doc) : null}
             allowDelete={allowDoctorDelete} showCheckbox={showCheckbox} />
         ))}
         {allowDoctorDelete && <button className="add-doctor-btn" onClick={onAddDoctor}><Plus size={14} /> ডাক্তার যোগ করুন</button>}
@@ -697,7 +593,7 @@ function DepartmentModal({ initial, onSave, onClose }) {
 }
 
 // ==================================================
-// ✅ Doctor Modal (Updated with English Name field)
+// ✅ DoctorModal — with Vercel Blob image upload
 // ==================================================
 function DoctorModal({ initial, onSave, onClose }) {
   const [name, setName] = useState(initial ? initial.name : '');
@@ -709,6 +605,12 @@ function DoctorModal({ initial, onSave, onClose }) {
     initial?.timeSlots && initial.timeSlots.length > 0 ? initial.timeSlots : [{ start: '09:00 AM', end: '11:00 AM' }]
   );
   const [slotErrors, setSlotErrors] = useState({});
+
+  // ✅ Image state
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState(initial?.imageUrl || '');
+  const [imageError, setImageError] = useState('');
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
@@ -747,7 +649,31 @@ function DoctorModal({ initial, onSave, onClose }) {
     }
   };
 
-  const handleSave = () => {
+  const handleImageSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImageError('');
+    if (!file.type.startsWith('image/')) {
+      setImageError('শুধু ছবি (image) ফাইল নির্বাচন করুন');
+      return;
+    }
+    if (file.size > 3 * 1024 * 1024) {
+      setImageError('ছবির সাইজ 3MB এর কম হতে হবে');
+      return;
+    }
+    setImageFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => setImagePreview(reader.result);
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveImage = () => {
+    setImageFile(null);
+    setImagePreview('');
+    setImageError('');
+  };
+
+  const handleSave = async () => {
     if (!name.trim()) { alert('ডাক্তারের নাম লিখুন!'); return; }
     const errors = {};
     let hasError = false;
@@ -767,6 +693,43 @@ function DoctorModal({ initial, onSave, onClose }) {
     });
     if (hasError) { setSlotErrors(errors); alert('সময় স্লটে ত্রুটি আছে। অনুগ্রহ করে ঠিক করুন।'); return; }
     const cleanedSlots = timeSlots.map((slot) => ({ start: standardizeTime(slot.start), end: standardizeTime(slot.end) }));
+
+    // ✅ Vercel Blob-এ image upload
+    let finalImageUrl = initial?.imageUrl || '';
+    try {
+      if (imageFile) {
+        setUploading(true);
+        setImageError('');
+
+        const formData = new FormData();
+        formData.append('file', imageFile);
+
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || 'Upload failed');
+        }
+
+        finalImageUrl = data.url;
+        console.log('✅ Image uploaded:', finalImageUrl);
+      } else if (initial?.imageUrl && !imagePreview) {
+        // ✅ ছবি remove করা হয়েছে — পুরোনো URL সরিয়ে দিই
+        finalImageUrl = '';
+      }
+    } catch (err) {
+      console.error('❌ Image upload error:', err);
+      setImageError(err.message || 'ছবি আপলোড করতে সমস্যা হয়েছে');
+      setUploading(false);
+      return;
+    } finally {
+      setUploading(false);
+    }
+
     onSave({
       name: name.trim(),
       nameEn: nameEn.trim(),
@@ -774,6 +737,7 @@ function DoctorModal({ initial, onSave, onClose }) {
       specialty,
       workplace,
       timeSlots: cleanedSlots,
+      imageUrl: finalImageUrl,
     });
   };
 
@@ -790,21 +754,61 @@ function DoctorModal({ initial, onSave, onClose }) {
           <button className="icon-btn" onClick={onClose}><X size={18} /></button>
         </div>
         <div className="modal-body">
+
+          {/* ✅ Image Upload Section */}
+          <label style={{ fontWeight: '700', display: 'block', marginBottom: '8px' }}>ডাক্তারের ছবি</label>
+          <div className="doctor-image-upload" style={{ marginBottom: '16px' }}>
+            <div className="doctor-image-preview">
+              {imagePreview ? (
+                <img src={imagePreview} alt="Doctor preview" />
+              ) : (
+                <span className="placeholder"><User size={40} /></span>
+              )}
+            </div>
+            <div style={{ flex: 1, minWidth: '180px' }}>
+              <input
+                type="file"
+                id="doctor-image-input"
+                accept="image/*"
+                onChange={handleImageSelect}
+                style={{ display: 'none' }}
+              />
+              <label
+                htmlFor="doctor-image-input"
+                className="btn btn-secondary"
+                style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', fontSize: '13px' }}
+              >
+                <Camera size={15} /> ছবি নির্বাচন করুন
+              </label>
+              {imagePreview && (
+                <button
+                  type="button"
+                  onClick={handleRemoveImage}
+                  className="btn btn-outline"
+                  style={{ marginLeft: '8px', fontSize: '12.5px', padding: '8px 14px' }}
+                >
+                  <X size={14} /> সরান
+                </button>
+              )}
+              <p style={{ fontSize: '11.5px', color: '#94a3b8', margin: '6px 0 0 0' }}>
+                JPG / PNG · সর্বোচ্চ 3MB · বর্গাকার ছবি সবচেয়ে ভালো
+              </p>
+              {imageError && (
+                <p style={{ fontSize: '12px', color: '#dc2626', margin: '4px 0 0 0', fontWeight: '600' }}>
+                  ⚠️ {imageError}
+                </p>
+              )}
+            </div>
+          </div>
+
           <label>ডাক্তারের নাম (বাংলা)</label>
           <input className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="যেমনঃ ডাঃ মোহাম্মদ নূর" />
 
           <label style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
             ডাক্তারের নাম (English)
-            <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: '400' }}>
-              (SMS/Email-এ ব্যবহৃত হবে, UI-তে দেখাবে না)
-            </span>
+            <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: '400' }}>(SMS/Email-এ ব্যবহৃত হবে)</span>
           </label>
-          <input
-            className="input"
-            value={nameEn}
-            onChange={(e) => setNameEn(e.target.value)}
-            placeholder="যেমনঃ Dr. Mohammad Nur"
-          />
+          <input className="input" value={nameEn} onChange={(e) => setNameEn(e.target.value)} placeholder="যেমনঃ Dr. Mohammad Nur" />
 
           <label style={{ marginTop: '12px' }}>শিক্ষাগত যোগ্যতা / ডিগ্রি</label>
           <textarea className="textarea" rows={3} value={quals} onChange={(e) => setQuals(e.target.value)} placeholder="প্রতি লাইনে একটি করে ডিগ্রি লিখুন" />
@@ -851,8 +855,10 @@ function DoctorModal({ initial, onSave, onClose }) {
           </div>
         </div>
         <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={onClose}>বাতিল</button>
-          <button className="btn btn-primary" onClick={handleSave} disabled={!name.trim()}>সংরক্ষণ করুন</button>
+          <button className="btn btn-secondary" onClick={onClose} disabled={uploading}>বাতিল</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={!name.trim() || uploading}>
+            {uploading ? <><Loader2 size={14} className="spin" /> আপলোড হচ্ছে...</> : 'সংরক্ষণ করুন'}
+          </button>
         </div>
       </div>
     </div>
@@ -915,7 +921,7 @@ function PanelSwitcher({ panels, activePanelId, onSwitch, onAdd, onRename, onDel
   );
 }
 
-function EditPanel({ panel, departments, footer, checkedIds, allChecked, onUpdateTitle, onUpdateFooter, onUpdatePhone, onAddPhone, onRemovePhone, onAddDept, onEditDept, onDeleteDept, onMoveDept, onAddDoctor, onEditDoctor, onDeleteDoctor, onMoveDoctor, onToggleDoctorChecked, onToggleDeptAllChecked, onToggleAll, clearConfirm, onClearAll, onGoPreview }) {
+function EditPanel({ panel, departments, footer, checkedIds, allChecked, onUpdateTitle, onUpdateFooter, onUpdatePhone, onAddPhone, onRemovePhone, onAddDept, onEditDept, onDeleteDept, onMoveDept, onAddDoctor, onEditDoctor, onDeleteDoctor, onMoveDoctor, onToggleDoctorChecked, onToggleDeptAllChecked, onToggleAll, clearConfirm, onClearAll, onGoPreview, onShowDoctorLink }) {
   return (
     <div className="edit-panel">
       <section className="panel-section">
@@ -925,7 +931,7 @@ function EditPanel({ panel, departments, footer, checkedIds, allChecked, onUpdat
       </section>
       <section className="panel-section">
         <div className="section-header"><label>বিভাগ ও ডাক্তার তালিকা — {panel.name}</label><button className="btn btn-primary" onClick={onAddDept}><Plus size={15} /> নতুন বিভাগ</button></div>
-        <p className="section-hint">প্রতিটি ডাক্তারের পাশের বক্সে টিক দিয়ে বেছে নিন কারা "{panel.name}"-এর পোস্টারে দেখাবে।</p>
+        <p className="section-hint">প্রতিটি ডাক্তারের পাশের বক্সে টিক দিয়ে বেছে নিন কারা "{panel.name}"-এর পোস্টারে দেখাবে। 🔗 আইকনে ক্লিক করে বুকিং লিংক দেখুন।</p>
         {departments.length === 0 ? (<div className="empty-state">এখনো কোনো বিভাগ যোগ করা হয়নি।</div>) : null}
         {departments.map((dept, i) => (
           <DepartmentCard key={dept.id} dept={dept} index={i} total={departments.length} checkedIds={checkedIds}
@@ -935,6 +941,7 @@ function EditPanel({ panel, departments, footer, checkedIds, allChecked, onUpdat
             onDeleteDoctor={(docId) => onDeleteDoctor(dept.id, docId)}
             onMoveDoctorUp={(docId) => onMoveDoctor(dept.id, docId, -1)} onMoveDoctorDown={(docId) => onMoveDoctor(dept.id, docId, 1)}
             onToggleDoctorChecked={onToggleDoctorChecked} onToggleAllChecked={() => onToggleDeptAllChecked(dept.id)}
+            onShowDoctorLink={onShowDoctorLink}
             allowDeptDelete={false} allowDoctorDelete={false} />
         ))}
       </section>
@@ -1080,7 +1087,7 @@ function PreviewPanel({ panel, departments, checkedIds, footer, onBack, user }) 
   );
 }
 
-function ManageDoctorsView({ departments, onAddDept, onEditDept, onDeleteDept, onMoveDept, onAddDoctor, onEditDoctor, onDeleteDoctor, onMoveDoctor, isAdmin, onRefreshData }) {
+function ManageDoctorsView({ departments, onAddDept, onEditDept, onDeleteDept, onMoveDept, onAddDoctor, onEditDoctor, onDeleteDoctor, onMoveDoctor, isAdmin, onRefreshData, onShowDoctorLink }) {
   return (
     <div className="edit-panel">
       <section className="panel-section">
@@ -1089,7 +1096,7 @@ function ManageDoctorsView({ departments, onAddDept, onEditDept, onDeleteDept, o
           <button className="btn btn-secondary" onClick={onRefreshData}><RefreshCw size={14} /> ডেটা রিফ্রেশ করুন</button>
           {isAdmin && <button className="btn btn-primary" onClick={onAddDept}><Plus size={15} /> নতুন বিভাগ</button>}
         </div>
-        <p className="section-hint">ডেটা না দেখালে "ডেটা রিফ্রেশ করুন" বাটনে ক্লিক করুন।</p>
+        <p className="section-hint">ডেটা না দেখালে "ডেটা রিফ্রেশ করুন" বাটনে ক্লিক করুন। 🔗 আইকনে ক্লিক করে ডাক্তারের বুকিং লিংক কপি করুন। 📷 এডিট থেকে ডাক্তারের ছবি যোগ করুন।</p>
         {departments.length === 0 ? (<div className="empty-state">এখনো কোনো বিভাগ যোগ করা হয়নি বা ডেটা লোড করা যায়নি।</div>) : null}
         {departments.map((dept, i) => (
           <DepartmentCard key={dept.id} dept={dept} index={i} total={departments.length} checkedIds={new Set()}
@@ -1099,6 +1106,7 @@ function ManageDoctorsView({ departments, onAddDept, onEditDept, onDeleteDept, o
             onDeleteDoctor={(docId) => onDeleteDoctor(dept.id, docId)}
             onMoveDoctorUp={(docId) => onMoveDoctor(dept.id, docId, -1)} onMoveDoctorDown={(docId) => onMoveDoctor(dept.id, docId, 1)}
             onToggleDoctorChecked={() => {}} onToggleAllChecked={() => {}}
+            onShowDoctorLink={onShowDoctorLink}
             allowDeptDelete={isAdmin} allowDoctorDelete={isAdmin}
             showCheckbox={false} showSelectAll={false} />
         ))}
@@ -1122,7 +1130,18 @@ export default function DoctorPanelBuilder() {
   const isGuest = !user;
 
   const path = location.pathname;
-  const activeView = path === '/' ? 'preview' : path.substring(1);
+
+  const bookingDoctorMatch = path.match(/^\/booking\/(.+)$/);
+  const bookingDoctorId = bookingDoctorMatch ? bookingDoctorMatch[1] : null;
+
+  let activeView;
+  if (path === '/') {
+    activeView = 'preview';
+  } else if (bookingDoctorId) {
+    activeView = 'booking';
+  } else {
+    activeView = path.substring(1);
+  }
 
   const setActiveView = (view) => {
     if (view === 'preview') navigate('/');
@@ -1136,12 +1155,12 @@ export default function DoctorPanelBuilder() {
   const [activePanelId, setActivePanelId] = useState(null);
   const [footer, setFooter] = useState(DEFAULT_FOOTER);
   const [loading, setLoading] = useState(true);
-  const [mode, setMode] = useState('edit');
   const [saveStatus, setSaveStatus] = useState('idle');
   const [checkedIds, setCheckedIds] = useState(new Set());
   const [deptModal, setDeptModal] = useState(null);
   const [doctorModal, setDoctorModal] = useState(null);
   const [panelModal, setPanelModal] = useState(null);
+  const [linkModalDoctor, setLinkModalDoctor] = useState(null);
   const [clearConfirm, setClearConfirm] = useState(false);
   const debounceRef = useRef(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -1321,6 +1340,7 @@ export default function DoctorPanelBuilder() {
   };
   const handleAddDoctor = (deptId) => setDoctorModal({ deptId, mode: 'add' });
   const handleEditDoctor = (deptId, doctor) => setDoctorModal({ deptId, mode: 'edit', doctor });
+
   const handleSaveDoctor = (fields) => {
     const deptId = doctorModal.deptId;
     if (doctorModal.mode === 'add') {
@@ -1420,8 +1440,13 @@ export default function DoctorPanelBuilder() {
   };
   const handleRefreshData = () => setReloadKey(prev => prev + 1);
 
+  const handleShowDoctorLink = (doctor) => {
+    setLinkModalDoctor(doctor);
+  };
+
   const getIsAuthorized = () => {
     if (path === '/' || path === '/booking' || path === '/display' || path === '/preview' || path === '/login') return true;
+    if (bookingDoctorId) return true;
     if (path === '/edit' && (isEditor || isModerator || isSubAdmin || isAdmin)) return true;
     if (path === '/doctors' && (isSubAdmin || isAdmin)) return true;
     if (path === '/dashboard' && (isEditor || isModerator || isSubAdmin || isAdmin)) return true;
@@ -1516,21 +1541,38 @@ export default function DoctorPanelBuilder() {
         />
       )}
 
-      {activeView === 'booking' && <BookingSystem departments={departments} panels={panels} onBack={() => setActiveView('preview')} />}
+      {activeView === 'booking' && (
+        <BookingSystem
+          departments={departments}
+          panels={panels}
+          preselectedDoctorId={bookingDoctorId}
+          onBack={() => {
+            if (bookingDoctorId) navigate('/');
+            else setActiveView('preview');
+          }}
+        />
+      )}
       {activeView === 'preview' && <PreviewPanel panel={activePanel} departments={departments} checkedIds={checkedIds} footer={footer} user={user} />}
       {activeView === 'edit' && !isGuest && (isEditor || isModerator || isSubAdmin || isAdmin) && (
-        <EditPanel panel={activePanel} departments={departments} footer={footer} checkedIds={checkedIds} allChecked={allChecked} onUpdateTitle={handleUpdateTitle} onUpdateFooter={handleUpdateFooter} onUpdatePhone={handleUpdatePhone} onAddPhone={handleAddPhone} onRemovePhone={handleRemovePhone} onAddDept={handleAddDept} onEditDept={handleEditDept} onDeleteDept={isAdmin ? handleDeleteDept : () => {}} onMoveDept={handleMoveDept} onAddDoctor={handleAddDoctor} onEditDoctor={handleEditDoctor} onDeleteDoctor={() => {}} onMoveDoctor={handleMoveDoctor} onToggleDoctorChecked={handleToggleDoctorChecked} onToggleDeptAllChecked={handleToggleDeptAllChecked} onToggleAll={handleToggleAll} clearConfirm={clearConfirm} onClearAll={() => {}} onGoPreview={() => setActiveView('preview')} />
+        <EditPanel panel={activePanel} departments={departments} footer={footer} checkedIds={checkedIds} allChecked={allChecked} onUpdateTitle={handleUpdateTitle} onUpdateFooter={handleUpdateFooter} onUpdatePhone={handleUpdatePhone} onAddPhone={handleAddPhone} onRemovePhone={handleRemovePhone} onAddDept={handleAddDept} onEditDept={handleEditDept} onDeleteDept={isAdmin ? handleDeleteDept : () => {}} onMoveDept={handleMoveDept} onAddDoctor={handleAddDoctor} onEditDoctor={handleEditDoctor} onDeleteDoctor={() => {}} onMoveDoctor={handleMoveDoctor} onToggleDoctorChecked={handleToggleDoctorChecked} onToggleDeptAllChecked={handleToggleDeptAllChecked} onToggleAll={handleToggleAll} clearConfirm={clearConfirm} onClearAll={() => {}} onGoPreview={() => setActiveView('preview')} onShowDoctorLink={handleShowDoctorLink} />
       )}
       {activeView === 'doctors' && (isSubAdmin || isAdmin) && (
-        <ManageDoctorsView departments={departments} onAddDept={handleAddDept} onEditDept={handleEditDept} onDeleteDept={handleDeleteDept} onMoveDept={handleMoveDept} onAddDoctor={handleAddDoctor} onEditDoctor={handleEditDoctor} onDeleteDoctor={handleDeleteDoctor} onMoveDoctor={handleMoveDoctor} isAdmin={isAdmin} onRefreshData={handleRefreshData} />
+        <ManageDoctorsView departments={departments} onAddDept={handleAddDept} onEditDept={handleEditDept} onDeleteDept={handleDeleteDept} onMoveDept={handleMoveDept} onAddDoctor={handleAddDoctor} onEditDoctor={handleEditDoctor} onDeleteDoctor={handleDeleteDoctor} onMoveDoctor={handleMoveDoctor} isAdmin={isAdmin} onRefreshData={handleRefreshData} onShowDoctorLink={handleShowDoctorLink} />
       )}
       {activeView === 'admin' && isAdmin && <AdminPanel users={allUsers} onApprove={handleApprove} onSetRole={handleSetRole} onDeleteUser={handleDeleteUser} />}
       {activeView === 'dashboard' && (isEditor || isModerator || isSubAdmin || isAdmin) && <AdminDashboard user={user} />}
 
       {showAuth && <AuthPage onClose={() => setShowAuth(false)} />}
       {deptModal && <DepartmentModal initial={deptModal.mode === 'edit' ? deptModal.dept : null} onSave={handleSaveDept} onClose={() => setDeptModal(null)} />}
-      {doctorModal && <DoctorModal initial={doctorModal.mode === 'edit' ? doctorModal.doctor : null} onSave={handleSaveDoctor} onClose={() => setDoctorModal(null)} />}
+      {doctorModal && (
+        <DoctorModal
+          initial={doctorModal.mode === 'edit' ? doctorModal.doctor : null}
+          onSave={handleSaveDoctor}
+          onClose={() => setDoctorModal(null)}
+        />
+      )}
       {panelModal && <PanelModal mode={panelModal.mode} initial={panelModal.mode === 'rename' ? panelModal.panel : null} activeDeptCount={activePanel.activeDoctorIds?.length || 0} departments={departments} onSave={handleSavePanel} onClose={() => setPanelModal(null)} />}
+      {linkModalDoctor && <DoctorLinkModal doctor={linkModalDoctor} onClose={() => setLinkModalDoctor(null)} />}
     </div>
   );
 }

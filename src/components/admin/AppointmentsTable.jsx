@@ -2,7 +2,8 @@
 // ==================================================
 // 📋 AppointmentsTable — With Date Filter + Confirm Modal
 // ==================================================
-// ✅ Fixed: departments + panels props for EditBookingModal
+// ✅ Responsive: hides low-priority columns on small screens
+// ✅ departments + panels props for EditBookingModal
 // ==================================================
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { AppointmentsTableSkeleton } from '../ui/SkeletonScreens';
@@ -64,7 +65,7 @@ const StatusBadge = ({ status }) => {
         color: style.color,
         padding: '4px 8px',
         borderRadius: '20px',
-        fontSize: '12px',
+        fontSize: '11px',
         fontWeight: '700',
         whiteSpace: 'nowrap',
       }}
@@ -99,9 +100,9 @@ const ActionButton = ({ onClick, title, bg, icon }) => (
       color: '#fff',
       border: 'none',
       borderRadius: '5px',
-      padding: '5px 8px',
+      padding: '4px 6px',
       cursor: 'pointer',
-      marginRight: '4px',
+      marginRight: '3px',
     }}
   >
     {icon}
@@ -238,12 +239,28 @@ export default function AppointmentsTable({
   user,
   marketingTeam = [],
   onAppointmentsChange,
-  departments = [],   // ✅ NEW
-  panels = [],        // ✅ NEW
+  departments = [],
+  panels = [],
 }) {
   const { currentHospital } = useHospital();
   const hospitalId = currentHospital?.id;
   const { can } = usePermission();
+
+  // ==================================================
+  // ✅ Responsive screen detection
+  // ==================================================
+  const [screenWidth, setScreenWidth] = useState(
+    typeof window !== 'undefined' ? window.innerWidth : 1400
+  );
+
+  useEffect(() => {
+    const handleResize = () => setScreenWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const isSmallScreen = screenWidth < 1024;   // < 1024px: hide low-priority columns
+  const isMobile = screenWidth < 768;         // < 768px: extra compact
 
   const [viewMode, setViewMode] = useState('list');
   const [searchTerm, setSearchTerm] = useState('');
@@ -256,15 +273,11 @@ export default function AppointmentsTable({
   const [updatingHighlight, setUpdatingHighlight] = useState(null);
   const [sortOrder, setSortOrder] = useState('desc');
 
-  // ✅ Date Filter States
   const [datePreset, setDatePreset] = useState('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
-  // ✅ Confirm Modal State
   const [confirmModalAppt, setConfirmModalAppt] = useState(null);
-
-  // ✅ Edit Booking Modal State
   const [editBookingModalAppt, setEditBookingModalAppt] = useState(null);
 
   const userModifiedRef = useRef(new Set());
@@ -274,9 +287,6 @@ export default function AppointmentsTable({
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterDoctor, setFilterDoctor] = useState('all');
 
-  // ==================================================
-  // ✅ Permission shortcuts
-  // ==================================================
   const canView = can('booking.view');
   const canEdit = can('booking.edit');
   const canStatusChange = can('booking.status_change');
@@ -330,7 +340,6 @@ export default function AppointmentsTable({
   const filteredAppointments = useMemo(() => {
     let filtered = appointments;
 
-    // ✅ ১. Date Filter
     if (startDate && endDate) {
       filtered = filtered.filter((a) => {
         const apptDate = normalizeBookingDate(a.bookingDate);
@@ -349,7 +358,6 @@ export default function AppointmentsTable({
       });
     }
 
-    // ✅ ২. Search Filter
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(
@@ -362,22 +370,18 @@ export default function AppointmentsTable({
       );
     }
 
-    // ✅ ৩. Officer Filter
     if (filterOfficer !== 'all') {
       filtered = filtered.filter((a) => a.marketingOfficer === filterOfficer);
     }
 
-    // ✅ ৪. Status Filter
     if (filterStatus !== 'all') {
       filtered = filtered.filter((a) => a.status === filterStatus);
     }
 
-    // ✅ ৫. Doctor Filter
     if (filterDoctor !== 'all') {
       filtered = filtered.filter((a) => a.doctorName === filterDoctor);
     }
 
-    // ✅ ৬. Sort
     filtered = [...filtered].sort((a, b) => {
       if (isArchivedView) {
         const timeA =
@@ -510,7 +514,6 @@ export default function AppointmentsTable({
   };
 
   const handleConfirmSuccess = async () => {
-    console.log('✅ Confirm modal success — refreshing data');
     try {
       if (onAppointmentsChange) {
         await onAppointmentsChange();
@@ -536,7 +539,6 @@ export default function AppointmentsTable({
   };
 
   const handleEditBookingSuccess = async () => {
-    console.log('✅ Booking edited successfully');
     if (onAppointmentsChange) {
       await onAppointmentsChange();
     }
@@ -678,7 +680,7 @@ export default function AppointmentsTable({
   };
 
   // ==================================================
-  // ✅ Edit (inline — referral/remarks/officer)
+  // ✅ Inline Edit
   // ==================================================
   const startEdit = (appt) => {
     if (!canEdit && !canReferralEdit && !canMarketingAssign) {
@@ -758,7 +760,6 @@ export default function AppointmentsTable({
       return;
     }
 
-    // ✅ যদি 'confirmed' সিলেক্ট করে, তাহলে Confirm Modal খুলব
     if (newStatus === 'confirmed') {
       const appt = filteredAppointments.find((a) => a.id === id);
       if (appt) {
@@ -885,14 +886,13 @@ export default function AppointmentsTable({
   const renderActions = (appt) => {
     const actions = [];
 
-    // View details
     actions.push(
       <ActionButton
         key="view"
         onClick={() => setViewDetails(appt)}
         title="বিস্তারিত দেখুন"
         bg="#64748b"
-        icon={<Eye size={14} />}
+        icon={<Eye size={13} />}
       />
     );
 
@@ -904,7 +904,7 @@ export default function AppointmentsTable({
             onClick={() => onRestore(appt.id)}
             title="Restore করুন"
             bg="#2f9e52"
-            icon={<Undo2 size={14} />}
+            icon={<Undo2 size={13} />}
           />
         );
       }
@@ -915,7 +915,7 @@ export default function AppointmentsTable({
             onClick={() => onPermanentDelete(appt.id)}
             title="স্থায়ীভাবে মুছুন"
             bg="#dc2626"
-            icon={<Trash2 size={14} />}
+            icon={<Trash2 size={13} />}
           />
         );
       }
@@ -925,7 +925,6 @@ export default function AppointmentsTable({
     const currentStatus = appt.status || 'pending';
     const nextStatuses = validTransitions[currentStatus] || [];
 
-    // ✅ Edit Booking button (date/doctor change)
     if (
       (canEdit || canStatusChange) &&
       currentStatus !== 'completed' &&
@@ -937,12 +936,11 @@ export default function AppointmentsTable({
           onClick={() => handleOpenEditBookingModal(appt)}
           title="তারিখ/ডাক্তার পরিবর্তন করুন"
           bg="#0891b2"
-          icon={<Calendar size={14} />}
+          icon={<Calendar size={13} />}
         />
       );
     }
 
-    // QR button
     if ((currentStatus === 'pending' || currentStatus === 'confirmed') && canQR) {
       actions.push(
         <ActionButton
@@ -950,7 +948,7 @@ export default function AppointmentsTable({
           onClick={() => handleShowQR(appt.id)}
           title="QR কোড দেখুন"
           bg="#8b5cf6"
-          icon={<QrCode size={14} />}
+          icon={<QrCode size={13} />}
         />
       );
     }
@@ -963,7 +961,7 @@ export default function AppointmentsTable({
             onClick={() => handleOpenConfirmModal(appt)}
             title="Confirm করুন (মেসেজ এডিটসহ)"
             bg="#3b82f6"
-            icon={<CheckCircle size={14} />}
+            icon={<CheckCircle size={13} />}
           />
         );
         actions.push(
@@ -972,7 +970,7 @@ export default function AppointmentsTable({
             onClick={() => onStatusChange(appt.id, 'cancelled')}
             title="Cancel করুন"
             bg="#d97706"
-            icon={<XCircle size={14} />}
+            icon={<XCircle size={13} />}
           />
         );
       } else if (currentStatus === 'confirmed') {
@@ -982,7 +980,7 @@ export default function AppointmentsTable({
             onClick={() => onStatusChange(appt.id, 'checked-in')}
             title="Checked-in করুন"
             bg="#8b5cf6"
-            icon={<UserCheck size={14} />}
+            icon={<UserCheck size={13} />}
           />
         );
         actions.push(
@@ -991,7 +989,7 @@ export default function AppointmentsTable({
             onClick={() => onStatusChange(appt.id, 'cancelled')}
             title="Cancel করুন"
             bg="#d97706"
-            icon={<XCircle size={14} />}
+            icon={<XCircle size={13} />}
           />
         );
         actions.push(
@@ -1000,7 +998,7 @@ export default function AppointmentsTable({
             onClick={() => onStatusChange(appt.id, 'no-show')}
             title="No-show করুন"
             bg="#6b7280"
-            icon={<Clock size={14} />}
+            icon={<Clock size={13} />}
           />
         );
       } else if (currentStatus === 'checked-in') {
@@ -1010,7 +1008,7 @@ export default function AppointmentsTable({
             onClick={() => onStatusChange(appt.id, 'completed')}
             title="Completed করুন"
             bg="#22c55e"
-            icon={<CheckCircle size={14} />}
+            icon={<CheckCircle size={13} />}
           />
         );
       }
@@ -1023,7 +1021,7 @@ export default function AppointmentsTable({
           onClick={() => onArchive(appt.id)}
           title="আর্কাইভ করুন"
           bg="#d97706"
-          icon={<Archive size={14} />}
+          icon={<Archive size={13} />}
         />
       );
     }
@@ -1035,16 +1033,16 @@ export default function AppointmentsTable({
           value=""
           onChange={(e) => handleDropdownChange(appt.id, e.target.value)}
           style={{
-            padding: '5px',
+            padding: '4px 6px',
             borderRadius: '5px',
             border: '1px solid #e2e8f0',
-            fontSize: '12px',
+            fontSize: '11px',
             color: '#334155',
             background: '#ffffff',
           }}
         >
           <option value="" disabled>
-            -- Manually Set --
+            Set
           </option>
           {nextStatuses.map((status) => (
             <option key={status} value={status}>
@@ -1087,10 +1085,11 @@ export default function AppointmentsTable({
       style={{
         background: '#ffffff',
         borderRadius: '10px',
-        padding: '20px',
+        padding: isMobile ? '12px' : '20px',
         width: '100%',
         overflowX: 'auto',
         color: '#1f2937',
+        boxSizing: 'border-box',
       }}
     >
       {/* Header */}
@@ -1105,11 +1104,11 @@ export default function AppointmentsTable({
         }}
       >
         <div>
-          <h3 style={{ margin: 0, color: '#1f2937' }}>
+          <h3 style={{ margin: 0, color: '#1f2937', fontSize: isMobile ? '16px' : '20px' }}>
             {isArchivedView ? '📦 আর্কাইভ করা বুকিং' : 'রোগীর বুকিং লিস্ট'}
           </h3>
           {isArchivedView && (
-            <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#64748b' }}>
+            <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#64748b' }}>
               শুধুমাত্র আর্কাইভ করা বুকিংগুলো এখানে সংরক্ষিত থাকবে।
             </p>
           )}
@@ -1123,7 +1122,7 @@ export default function AppointmentsTable({
             background: '#f8fafc',
             border: '1px solid #e2e8f0',
             borderRadius: '10px',
-            padding: '14px 16px',
+            padding: isMobile ? '10px 12px' : '14px 16px',
             marginBottom: '15px',
           }}
         >
@@ -1135,8 +1134,8 @@ export default function AppointmentsTable({
               marginBottom: '10px',
             }}
           >
-            <Calendar size={16} color="#1c5fa8" />
-            <strong style={{ fontSize: '13.5px', color: '#1e293b' }}>
+            <Calendar size={14} color="#1c5fa8" />
+            <strong style={{ fontSize: '12.5px', color: '#1e293b' }}>
               তারিখ অনুযায়ী ফিল্টার
             </strong>
           </div>
@@ -1144,9 +1143,9 @@ export default function AppointmentsTable({
           <div
             style={{
               display: 'flex',
-              gap: '8px',
+              gap: '6px',
               flexWrap: 'wrap',
-              marginBottom: '12px',
+              marginBottom: '10px',
             }}
           >
             {[
@@ -1161,13 +1160,13 @@ export default function AppointmentsTable({
                 key={p.key}
                 onClick={() => applyDatePreset(p.key)}
                 style={{
-                  padding: '6px 14px',
+                  padding: '5px 11px',
                   background: datePreset === p.key ? '#1c5fa8' : '#fff',
                   color: datePreset === p.key ? '#fff' : '#334155',
                   border: '1px solid ' + (datePreset === p.key ? '#1c5fa8' : '#cbd5e1'),
                   borderRadius: '20px',
                   cursor: 'pointer',
-                  fontSize: '13px',
+                  fontSize: '12px',
                   fontWeight: '600',
                 }}
               >
@@ -1179,7 +1178,7 @@ export default function AppointmentsTable({
           <div
             style={{
               display: 'flex',
-              gap: '12px',
+              gap: '10px',
               flexWrap: 'wrap',
               alignItems: 'center',
             }}
@@ -1188,7 +1187,7 @@ export default function AppointmentsTable({
               <label
                 style={{
                   display: 'block',
-                  fontSize: '12px',
+                  fontSize: '11px',
                   fontWeight: '600',
                   color: '#64748b',
                   marginBottom: '4px',
@@ -1204,10 +1203,10 @@ export default function AppointmentsTable({
                   setDatePreset('custom');
                 }}
                 style={{
-                  padding: '8px 12px',
+                  padding: '6px 10px',
                   border: '1px solid #cbd5e1',
                   borderRadius: '8px',
-                  fontSize: '14px',
+                  fontSize: '13px',
                   background: '#fff',
                   color: '#1e293b',
                 }}
@@ -1218,7 +1217,7 @@ export default function AppointmentsTable({
               <label
                 style={{
                   display: 'block',
-                  fontSize: '12px',
+                  fontSize: '11px',
                   fontWeight: '600',
                   color: '#64748b',
                   marginBottom: '4px',
@@ -1234,10 +1233,10 @@ export default function AppointmentsTable({
                   setDatePreset('custom');
                 }}
                 style={{
-                  padding: '8px 12px',
+                  padding: '6px 10px',
                   border: '1px solid #cbd5e1',
                   borderRadius: '8px',
-                  fontSize: '14px',
+                  fontSize: '13px',
                   background: '#fff',
                   color: '#1e293b',
                 }}
@@ -1249,9 +1248,9 @@ export default function AppointmentsTable({
                 style={{
                   background: '#dbeafe',
                   color: '#1e40af',
-                  padding: '8px 14px',
+                  padding: '6px 12px',
                   borderRadius: '8px',
-                  fontSize: '13px',
+                  fontSize: '12px',
                   fontWeight: '600',
                   display: 'flex',
                   alignItems: 'center',
@@ -1274,7 +1273,7 @@ export default function AppointmentsTable({
       <div
         style={{
           display: 'flex',
-          gap: '10px',
+          gap: '8px',
           alignItems: 'center',
           flexWrap: 'wrap',
           marginBottom: '15px',
@@ -1289,7 +1288,7 @@ export default function AppointmentsTable({
             padding: '4px 10px',
           }}
         >
-          <Search size={16} color="#64748b" />
+          <Search size={14} color="#64748b" />
           <input
             type="text"
             placeholder="নাম, মোবাইল, সিরিয়াল..."
@@ -1299,9 +1298,9 @@ export default function AppointmentsTable({
               border: 'none',
               background: 'transparent',
               outline: 'none',
-              padding: '6px',
-              fontSize: '13px',
-              width: '180px',
+              padding: '5px',
+              fontSize: '12px',
+              width: '150px',
             }}
           />
         </div>
@@ -1311,10 +1310,10 @@ export default function AppointmentsTable({
             value={filterOfficer}
             onChange={(e) => setFilterOfficer(e.target.value)}
             style={{
-              padding: '6px 10px',
+              padding: '5px 8px',
               border: '1px solid #e2e8f0',
               borderRadius: '6px',
-              fontSize: '13px',
+              fontSize: '12px',
               background: '#fff',
             }}
           >
@@ -1335,10 +1334,10 @@ export default function AppointmentsTable({
           value={filterStatus}
           onChange={(e) => setFilterStatus(e.target.value)}
           style={{
-            padding: '6px 10px',
+            padding: '5px 8px',
             border: '1px solid #e2e8f0',
             borderRadius: '6px',
-            fontSize: '13px',
+            fontSize: '12px',
             background: '#fff',
           }}
         >
@@ -1356,10 +1355,10 @@ export default function AppointmentsTable({
           value={filterDoctor}
           onChange={(e) => setFilterDoctor(e.target.value)}
           style={{
-            padding: '6px 10px',
+            padding: '5px 8px',
             border: '1px solid #e2e8f0',
             borderRadius: '6px',
-            fontSize: '13px',
+            fontSize: '12px',
             background: '#fff',
           }}
         >
@@ -1376,35 +1375,35 @@ export default function AppointmentsTable({
         <button
           onClick={resetFilters}
           style={{
-            padding: '6px 12px',
+            padding: '5px 10px',
             background: '#f1f5f9',
             border: '1px solid #e2e8f0',
             borderRadius: '6px',
             cursor: 'pointer',
-            fontSize: '13px',
+            fontSize: '12px',
             display: 'flex',
             alignItems: 'center',
             gap: '4px',
           }}
         >
-          <XCircleIcon size={14} /> রিসেট
+          <XCircleIcon size={12} /> রিসেট
         </button>
 
         <button
           onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
           style={{
-            padding: '6px 12px',
+            padding: '5px 10px',
             background: '#e2e8f0',
             border: '1px solid #cbd5e1',
             borderRadius: '6px',
             cursor: 'pointer',
-            fontSize: '13px',
+            fontSize: '12px',
             display: 'flex',
             alignItems: 'center',
             gap: '4px',
           }}
         >
-          <ArrowUpDown size={14} />{' '}
+          <ArrowUpDown size={12} />{' '}
           {sortOrder === 'asc' ? 'পুরনো→নতুন' : 'নতুন→পুরনো'}
         </button>
 
@@ -1412,47 +1411,47 @@ export default function AppointmentsTable({
           <div
             style={{
               display: 'flex',
-              gap: '5px',
+              gap: '4px',
               background: '#f1f5f9',
-              padding: '4px',
+              padding: '3px',
               borderRadius: '8px',
             }}
           >
             <button
               onClick={() => setViewMode('list')}
               style={{
-                padding: '6px 12px',
+                padding: '5px 10px',
                 borderRadius: '6px',
                 border: 'none',
                 cursor: 'pointer',
                 background: viewMode === 'list' ? '#1c5fa8' : 'transparent',
                 color: viewMode === 'list' ? '#fff' : '#475569',
                 fontWeight: '600',
-                fontSize: '13px',
+                fontSize: '12px',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '5px',
+                gap: '4px',
               }}
             >
-              <LayoutList size={14} /> সাধারণ
+              <LayoutList size={12} /> সাধারণ
             </button>
             <button
               onClick={() => setViewMode('doctor')}
               style={{
-                padding: '6px 12px',
+                padding: '5px 10px',
                 borderRadius: '6px',
                 border: 'none',
                 cursor: 'pointer',
                 background: viewMode === 'doctor' ? '#1c5fa8' : 'transparent',
                 color: viewMode === 'doctor' ? '#fff' : '#475569',
                 fontWeight: '600',
-                fontSize: '13px',
+                fontSize: '12px',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '5px',
+                gap: '4px',
               }}
             >
-              <Stethoscope size={14} /> ডাক্তার ওয়াইজ
+              <Stethoscope size={12} /> ডাক্তার ওয়াইজ
             </button>
           </div>
         )}
@@ -1467,7 +1466,7 @@ export default function AppointmentsTable({
         endDate) && (
         <div
           style={{
-            fontSize: '13px',
+            fontSize: '12px',
             color: '#64748b',
             marginBottom: '10px',
             display: 'flex',
@@ -1476,13 +1475,13 @@ export default function AppointmentsTable({
             flexWrap: 'wrap',
           }}
         >
-          <Filter size={14} />
+          <Filter size={12} />
           <span>ফিল্টার:</span>
           {startDate && (
             <span
               style={{
                 background: '#dbeafe',
-                padding: '2px 10px',
+                padding: '2px 8px',
                 borderRadius: '12px',
                 color: '#1e40af',
                 fontWeight: '600',
@@ -1496,7 +1495,7 @@ export default function AppointmentsTable({
             <span
               style={{
                 background: '#eef1f7',
-                padding: '2px 10px',
+                padding: '2px 8px',
                 borderRadius: '12px',
               }}
             >
@@ -1507,7 +1506,7 @@ export default function AppointmentsTable({
             <span
               style={{
                 background: '#eef1f7',
-                padding: '2px 10px',
+                padding: '2px 8px',
                 borderRadius: '12px',
               }}
             >
@@ -1518,7 +1517,7 @@ export default function AppointmentsTable({
             <span
               style={{
                 background: '#eef1f7',
-                padding: '2px 10px',
+                padding: '2px 8px',
                 borderRadius: '12px',
               }}
             >
@@ -1529,7 +1528,7 @@ export default function AppointmentsTable({
             <span
               style={{
                 background: '#eef1f7',
-                padding: '2px 10px',
+                padding: '2px 8px',
                 borderRadius: '12px',
               }}
             >
@@ -1597,7 +1596,7 @@ export default function AppointmentsTable({
           >
             এই ফিল্টারে কোনো বুকিং পাওয়া যায়নি
           </p>
-          <p style={{ fontSize: '13px', color: '#94a3b8', marginTop: '6px' }}>
+          <p style={{ fontSize: '12px', color: '#94a3b8', marginTop: '6px' }}>
             তারিখ বা ফিল্টার পরিবর্তন করে আবার চেষ্টা করুন।
           </p>
           <button
@@ -1619,12 +1618,17 @@ export default function AppointmentsTable({
         </div>
       ) : viewMode === 'list' || isArchivedView ? (
         // ============ LIST VIEW ============
-        <div style={{ overflowX: 'auto' }}>
+        <div style={{ overflowX: 'auto', width: '100%' }}>
           <table
             style={{
               width: '100%',
               borderCollapse: 'collapse',
-              minWidth: isArchivedView ? '1100px' : '1400px',
+              minWidth: isSmallScreen
+                ? '650px'
+                : isArchivedView
+                ? '900px'
+                : '1000px',
+              fontSize: isSmallScreen ? '11.5px' : '13px',
             }}
           >
             <thead>
@@ -1635,29 +1639,31 @@ export default function AppointmentsTable({
                   color: '#1f2937',
                 }}
               >
-                <th style={{ padding: '12px' }}>সিরিয়াল</th>
-                <th style={{ padding: '12px' }}>রোগীর নাম</th>
-                <th style={{ padding: '12px' }}>বয়স</th>
-                <th style={{ padding: '12px' }}>মোবাইল</th>
-                <th style={{ padding: '12px' }}>বুকিং তারিখ</th>
-                <th style={{ padding: '12px' }}>ডাক্তার</th>
-                <th style={{ padding: '12px' }}>রেফারেল</th>
-                {!isArchivedView && (
-                  <th style={{ padding: '12px' }}>মার্কেটিং অফিসার</th>
+                <th style={{ padding: '8px 6px', whiteSpace: 'nowrap' }}>সিরিয়াল</th>
+                <th style={{ padding: '8px 6px' }}>নাম</th>
+                {!isSmallScreen && <th style={{ padding: '8px 6px' }}>বয়স</th>}
+                <th style={{ padding: '8px 6px', whiteSpace: 'nowrap' }}>মোবাইল</th>
+                <th style={{ padding: '8px 6px', whiteSpace: 'nowrap' }}>বুকিং</th>
+                <th style={{ padding: '8px 6px' }}>ডাক্তার</th>
+                {!isSmallScreen && <th style={{ padding: '8px 6px' }}>রেফারেল</th>}
+                {!isArchivedView && !isSmallScreen && (
+                  <th style={{ padding: '8px 6px' }}>মার্কেটিং</th>
                 )}
-                <th style={{ padding: '12px' }}>রোগীর টাইপ</th>
-                {!isArchivedView && <th style={{ padding: '12px' }}>রিমার্কস</th>}
-                <th style={{ padding: '12px' }}>স্ট্যাটাস</th>
-                {isArchivedView && (
-                  <th style={{ padding: '12px' }}>আর্কাইভের তারিখ</th>
+                <th style={{ padding: '8px 6px', whiteSpace: 'nowrap' }}>টাইপ</th>
+                {!isArchivedView && !isSmallScreen && (
+                  <th style={{ padding: '8px 6px' }}>রিমার্কস</th>
                 )}
-                <th style={{ padding: '12px' }}>অ্যাকশন</th>
+                <th style={{ padding: '8px 6px' }}>স্ট্যাটাস</th>
+                {isArchivedView && !isSmallScreen && (
+                  <th style={{ padding: '8px 6px', whiteSpace: 'nowrap' }}>আর্কাইভ</th>
+                )}
+                <th style={{ padding: '8px 6px' }}>অ্যাকশন</th>
               </tr>
             </thead>
             <tbody>
               {filteredAppointments.map((appt) => {
                 const isEditing = editingId === appt.id;
-                const patientType = patientTypes[appt.id] || 'লোড হচ্ছে...';
+                const patientType = patientTypes[appt.id] || 'লোড...';
                 const isUpdating = updatingPatient === appt.id;
                 const isNew = appt.isNew === true && !isArchivedView;
 
@@ -1680,34 +1686,38 @@ export default function AppointmentsTable({
                     onClick={() => isNew && handleRowClick(appt.id)}
                     title={isNew ? 'হাইলাইট সরাতে ক্লিক করুন' : ''}
                   >
-                    <td style={{ padding: '12px', fontWeight: 'bold' }}>
+                    <td style={{ padding: '8px 6px', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
                       {appt.serialNo}
                       {isNew && (
                         <span
                           style={{
-                            marginLeft: '8px',
-                            fontSize: '10px',
+                            marginLeft: '4px',
+                            fontSize: '9px',
                             color: '#16a34a',
                             fontWeight: 'normal',
                           }}
                         >
-                          ● নতুন
+                          ●
                         </span>
                       )}
                     </td>
-                    <td style={{ padding: '12px' }}>{appt.name}</td>
-                    <td style={{ padding: '12px' }}>{appt.age || '-'}</td>
-                    <td style={{ padding: '12px' }}>{appt.mobile}</td>
-                    <td style={{ padding: '12px' }}>
-                      {appt.bookingDate} ({appt.bookingDay})
+                    <td style={{ padding: '8px 6px' }}>{appt.name}</td>
+                    {!isSmallScreen && (
+                      <td style={{ padding: '8px 6px' }}>{appt.age || '-'}</td>
+                    )}
+                    <td style={{ padding: '8px 6px', whiteSpace: 'nowrap' }}>
+                      {appt.mobile}
                     </td>
-                    <td style={{ padding: '12px' }}>
-                      {appt.doctorName}
+                    <td style={{ padding: '8px 6px', whiteSpace: 'nowrap', fontSize: isSmallScreen ? '11px' : '13px' }}>
+                      {appt.bookingDate}
                       <br />
+                      <small style={{ color: '#64748b' }}>({appt.bookingDay})</small>
+                    </td>
+                    <td style={{ padding: '8px 6px' }}>
+                      <div>{appt.doctorName}</div>
                       <small style={{ color: '#64748b' }}>{appt.doctorDept}</small>
                       {appt.doctorTime && (
-                        <>
-                          <br />
+                        <div>
                           <small
                             style={{
                               color: '#b45309',
@@ -1716,40 +1726,43 @@ export default function AppointmentsTable({
                           >
                             ⏱ {appt.doctorTime}
                           </small>
-                        </>
+                        </div>
                       )}
                     </td>
 
-                    <td style={{ padding: '12px' }}>
-                      {isEditing && canReferralEdit && !isArchivedView ? (
-                        <select
-                          value={editData.referralSource}
-                          onChange={(e) =>
-                            setEditData({
-                              ...editData,
-                              referralSource: e.target.value,
-                            })
-                          }
-                          style={{
-                            padding: '4px',
-                            border: '1px solid #cbd5e1',
-                            borderRadius: '4px',
-                            width: '100%',
-                          }}
-                        >
-                          {REFERRAL_SOURCES.map((src) => (
-                            <option key={src} value={src}>
-                              {src}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        appt.referralSource || '-'
-                      )}
-                    </td>
+                    {!isSmallScreen && (
+                      <td style={{ padding: '8px 6px' }}>
+                        {isEditing && canReferralEdit && !isArchivedView ? (
+                          <select
+                            value={editData.referralSource}
+                            onChange={(e) =>
+                              setEditData({
+                                ...editData,
+                                referralSource: e.target.value,
+                              })
+                            }
+                            style={{
+                              padding: '4px',
+                              border: '1px solid #cbd5e1',
+                              borderRadius: '4px',
+                              width: '100%',
+                              fontSize: '11px',
+                            }}
+                          >
+                            {REFERRAL_SOURCES.map((src) => (
+                              <option key={src} value={src}>
+                                {src}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          appt.referralSource || '-'
+                        )}
+                      </td>
+                    )}
 
-                    {!isArchivedView && (
-                      <td style={{ padding: '12px' }}>
+                    {!isArchivedView && !isSmallScreen && (
+                      <td style={{ padding: '8px 6px' }}>
                         {isEditing && canMarketingAssign ? (
                           <select
                             value={editData.marketingOfficerId || ''}
@@ -1775,6 +1788,7 @@ export default function AppointmentsTable({
                               border: '1px solid #cbd5e1',
                               borderRadius: '4px',
                               width: '100%',
+                              fontSize: '11px',
                             }}
                           >
                             <option value="">নির্বাচন করুন</option>
@@ -1799,7 +1813,7 @@ export default function AppointmentsTable({
                       </td>
                     )}
 
-                    <td style={{ padding: '12px' }}>
+                    <td style={{ padding: '8px 6px' }}>
                       {canPatientTypeChange && appt.patientId && !isArchivedView ? (
                         <select
                           value={patientType}
@@ -1812,9 +1826,9 @@ export default function AppointmentsTable({
                           }
                           disabled={isUpdating}
                           style={{
-                            padding: '8px 18px 8px 16px',
+                            padding: '4px 8px',
                             borderRadius: '24px',
-                            fontSize: '13px',
+                            fontSize: '11px',
                             fontWeight: '600',
                             border: '1px solid #e2e8f0',
                             background:
@@ -1834,7 +1848,7 @@ export default function AppointmentsTable({
                                 ? '#1e40af'
                                 : '#64748b',
                             cursor: isUpdating ? 'not-allowed' : 'pointer',
-                            minWidth: '130px',
+                            minWidth: '80px',
                             outline: 'none',
                           }}
                         >
@@ -1861,9 +1875,9 @@ export default function AppointmentsTable({
                                 : patientType === 'ফলোআপ'
                                 ? '#1e40af'
                                 : '#64748b',
-                            padding: '6px 16px',
+                            padding: '3px 10px',
                             borderRadius: '24px',
-                            fontSize: '13px',
+                            fontSize: '11px',
                             fontWeight: '600',
                             whiteSpace: 'nowrap',
                             display: 'inline-block',
@@ -1874,8 +1888,8 @@ export default function AppointmentsTable({
                       )}
                     </td>
 
-                    {!isArchivedView && (
-                      <td style={{ padding: '12px', minWidth: '150px' }}>
+                    {!isArchivedView && !isSmallScreen && (
+                      <td style={{ padding: '8px 6px', minWidth: '120px' }}>
                         {isEditing && canReferralEdit ? (
                           <div
                             style={{
@@ -1893,13 +1907,14 @@ export default function AppointmentsTable({
                                   remarks: e.target.value,
                                 })
                               }
-                              placeholder="রিমার্কস লিখুন"
+                              placeholder="রিমার্কস"
                               style={{
-                                padding: '4px 8px',
+                                padding: '3px 6px',
                                 border: '1px solid #cbd5e1',
                                 borderRadius: '4px',
                                 flex: '1',
-                                fontSize: '13px',
+                                fontSize: '11px',
+                                width: '80px',
                               }}
                             />
                             <button
@@ -1909,11 +1924,11 @@ export default function AppointmentsTable({
                                 color: '#fff',
                                 border: 'none',
                                 borderRadius: '4px',
-                                padding: '4px 8px',
+                                padding: '3px 6px',
                                 cursor: 'pointer',
                               }}
                             >
-                              <Save size={14} />
+                              <Save size={12} />
                             </button>
                             <button
                               onClick={cancelEdit}
@@ -1922,11 +1937,11 @@ export default function AppointmentsTable({
                                 color: '#fff',
                                 border: 'none',
                                 borderRadius: '4px',
-                                padding: '4px 8px',
+                                padding: '3px 6px',
                                 cursor: 'pointer',
                               }}
                             >
-                              <X size={14} />
+                              <X size={12} />
                             </button>
                           </div>
                         ) : (
@@ -1934,10 +1949,10 @@ export default function AppointmentsTable({
                             style={{
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '6px',
+                              gap: '4px',
                             }}
                           >
-                            <span style={{ fontSize: '13px' }}>
+                            <span style={{ fontSize: '11px' }}>
                               {appt.remarks || '-'}
                             </span>
                             {(canEdit || canReferralEdit || canMarketingAssign) && (
@@ -1950,7 +1965,7 @@ export default function AppointmentsTable({
                                   color: '#64748b',
                                 }}
                               >
-                                <Edit2 size={14} />
+                                <Edit2 size={12} />
                               </button>
                             )}
                           </div>
@@ -1958,15 +1973,15 @@ export default function AppointmentsTable({
                       </td>
                     )}
 
-                    <td style={{ padding: '12px' }}>
+                    <td style={{ padding: '8px 6px' }}>
                       <StatusBadge status={appt.status || 'pending'} />
                     </td>
 
-                    {isArchivedView && (
+                    {isArchivedView && !isSmallScreen && (
                       <td
                         style={{
-                          padding: '12px',
-                          fontSize: '13px',
+                          padding: '8px 6px',
+                          fontSize: '11px',
                           color: '#64748b',
                           whiteSpace: 'nowrap',
                         }}
@@ -1977,11 +1992,12 @@ export default function AppointmentsTable({
 
                     <td
                       style={{
-                        padding: '12px',
+                        padding: '8px 6px',
                         display: 'flex',
-                        gap: '5px',
+                        gap: '3px',
                         flexWrap: 'wrap',
                         alignItems: 'center',
+                        minWidth: '140px',
                       }}
                     >
                       {renderActions(appt)}
@@ -2019,14 +2035,16 @@ export default function AppointmentsTable({
                 <div
                   style={{
                     background: '#f8fafc',
-                    padding: '12px 15px',
+                    padding: '10px 12px',
                     borderBottom: '1px solid #e2e8f0',
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: '8px',
                   }}
                 >
-                  <strong style={{ color: '#1c5fa8', fontSize: '16px' }}>
+                  <strong style={{ color: '#1c5fa8', fontSize: '14px' }}>
                     {doctorName}
                   </strong>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -2034,9 +2052,9 @@ export default function AppointmentsTable({
                       style={{
                         background: '#0d9488',
                         color: '#fff',
-                        padding: '4px 10px',
+                        padding: '3px 10px',
                         borderRadius: '20px',
-                        fontSize: '13px',
+                        fontSize: '12px',
                         fontWeight: '700',
                       }}
                     >
@@ -2050,165 +2068,184 @@ export default function AppointmentsTable({
                           color: '#fff',
                           border: 'none',
                           borderRadius: '6px',
-                          padding: '4px 12px',
+                          padding: '3px 10px',
                           cursor: 'pointer',
-                          fontSize: '13px',
+                          fontSize: '12px',
                           fontWeight: '600',
                           display: 'inline-flex',
                           alignItems: 'center',
                           gap: '4px',
                         }}
                       >
-                        <Printer size={15} /> প্রিন্ট
+                        <Printer size={13} /> প্রিন্ট
                       </button>
                     )}
                   </span>
                 </div>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr
-                      style={{
-                        background: '#f1f5f9',
-                        textAlign: 'left',
-                        fontSize: '13px',
-                      }}
-                    >
-                      <th style={{ padding: '8px 12px' }}>সিরিয়াল</th>
-                      <th style={{ padding: '8px 12px' }}>রোগীর নাম</th>
-                      <th style={{ padding: '8px 12px' }}>বয়স</th>
-                      <th style={{ padding: '8px 12px' }}>মোবাইল</th>
-                      <th style={{ padding: '8px 12px' }}>বুকিং তারিখ</th>
-                      <th style={{ padding: '8px 12px' }}>রেফারেল</th>
-                      <th style={{ padding: '8px 12px' }}>মার্কেটিং অফিসার</th>
-                      <th style={{ padding: '8px 12px' }}>রোগীর টাইপ</th>
-                      <th style={{ padding: '8px 12px' }}>রিমার্কস</th>
-                      <th style={{ padding: '8px 12px' }}>স্ট্যাটাস</th>
-                      <th style={{ padding: '8px 12px' }}>অ্যাকশন</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {info.patients.map((appt) => {
-                      const patientType = patientTypes[appt.id] || 'লোড হচ্ছে...';
-                      const isUpdating = updatingPatient === appt.id;
-                      const isNew = appt.isNew === true;
+                <div style={{ overflowX: 'auto' }}>
+                  <table
+                    style={{
+                      width: '100%',
+                      borderCollapse: 'collapse',
+                      minWidth: isSmallScreen ? '650px' : '900px',
+                      fontSize: isSmallScreen ? '11.5px' : '13px',
+                    }}
+                  >
+                    <thead>
+                      <tr
+                        style={{
+                          background: '#f1f5f9',
+                          textAlign: 'left',
+                          fontSize: '12px',
+                        }}
+                      >
+                        <th style={{ padding: '6px 8px' }}>সিরিয়াল</th>
+                        <th style={{ padding: '6px 8px' }}>নাম</th>
+                        {!isSmallScreen && <th style={{ padding: '6px 8px' }}>বয়স</th>}
+                        <th style={{ padding: '6px 8px' }}>মোবাইল</th>
+                        <th style={{ padding: '6px 8px' }}>তারিখ</th>
+                        {!isSmallScreen && <th style={{ padding: '6px 8px' }}>রেফারেল</th>}
+                        {!isSmallScreen && <th style={{ padding: '6px 8px' }}>অফিসার</th>}
+                        <th style={{ padding: '6px 8px' }}>টাইপ</th>
+                        {!isSmallScreen && <th style={{ padding: '6px 8px' }}>রিমার্কস</th>}
+                        <th style={{ padding: '6px 8px' }}>স্ট্যাটাস</th>
+                        <th style={{ padding: '6px 8px' }}>অ্যাকশন</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {info.patients.map((appt) => {
+                        const patientType = patientTypes[appt.id] || 'লোড...';
+                        const isUpdating = updatingPatient === appt.id;
+                        const isNew = appt.isNew === true;
 
-                      return (
-                        <tr
-                          key={appt.id}
-                          style={{
-                            borderBottom: '1px solid #eee',
-                            fontSize: '14px',
-                            background: isNew ? '#f0fdf4' : 'transparent',
-                          }}
-                        >
-                          <td style={{ padding: '10px 12px', fontWeight: 'bold' }}>
-                            {appt.serialNo}
-                          </td>
-                          <td style={{ padding: '10px 12px' }}>{appt.name}</td>
-                          <td style={{ padding: '10px 12px' }}>{appt.age || '-'}</td>
-                          <td style={{ padding: '10px 12px' }}>{appt.mobile}</td>
-                          <td style={{ padding: '10px 12px' }}>
-                            {appt.bookingDate} ({appt.bookingDay})
-                          </td>
-                          <td style={{ padding: '10px 12px' }}>
-                            {appt.referralSource || '-'}
-                          </td>
-                          <td style={{ padding: '10px 12px' }}>
-                            {appt.marketingOfficer || '-'}
-                          </td>
-                          <td style={{ padding: '10px 12px' }}>
-                            {canPatientTypeChange && appt.patientId ? (
-                              <select
-                                value={patientType}
-                                onChange={(e) =>
-                                  handleManualCategoryChange(
-                                    appt.id,
-                                    appt.patientId,
-                                    e.target.value
-                                  )
-                                }
-                                disabled={isUpdating}
-                                style={{
-                                  padding: '4px 8px',
-                                  borderRadius: '4px',
-                                  fontSize: '12px',
-                                  fontWeight: '600',
-                                  border: '1px solid #cbd5e1',
-                                  background:
-                                    patientType === 'নতুন'
-                                      ? '#dcfce7'
-                                      : patientType === 'রিপোর্ট'
-                                      ? '#fef3c7'
-                                      : patientType === 'ফলোআপ'
-                                      ? '#dbeafe'
-                                      : '#f1f5f9',
-                                  color:
-                                    patientType === 'নতুন'
-                                      ? '#166534'
-                                      : patientType === 'রিপোর্ট'
-                                      ? '#92400e'
-                                      : patientType === 'ফলোআপ'
-                                      ? '#1e40af'
-                                      : '#64748b',
-                                  cursor: isUpdating ? 'not-allowed' : 'pointer',
-                                  minWidth: '100px',
-                                }}
-                              >
-                                <option value="নতুন">নতুন</option>
-                                <option value="রিপোর্ট">রিপোর্ট</option>
-                                <option value="ফলোআপ">ফলোআপ</option>
-                              </select>
-                            ) : (
-                              <span
-                                style={{
-                                  background:
-                                    patientType === 'নতুন'
-                                      ? '#dcfce7'
-                                      : patientType === 'রিপোর্ট'
-                                      ? '#fef3c7'
-                                      : patientType === 'ফলোআপ'
-                                      ? '#dbeafe'
-                                      : '#f1f5f9',
-                                  color:
-                                    patientType === 'নতুন'
-                                      ? '#166534'
-                                      : patientType === 'রিপোর্ট'
-                                      ? '#92400e'
-                                      : patientType === 'ফলোআপ'
-                                      ? '#1e40af'
-                                      : '#64748b',
-                                  padding: '4px 10px',
-                                  borderRadius: '20px',
-                                  fontSize: '12px',
-                                  fontWeight: '600',
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
-                                {patientType}
-                              </span>
-                            )}
-                          </td>
-                          <td style={{ padding: '10px 12px' }}>
-                            {appt.remarks || '-'}
-                          </td>
-                          <td style={{ padding: '10px 12px' }}>
-                            <StatusBadge status={appt.status || 'pending'} />
-                          </td>
-                          <td
+                        return (
+                          <tr
+                            key={appt.id}
                             style={{
-                              padding: '10px 12px',
-                              display: 'flex',
-                              gap: '5px',
-                              flexWrap: 'wrap',
+                              borderBottom: '1px solid #eee',
+                              fontSize: isSmallScreen ? '11.5px' : '13px',
+                              background: isNew ? '#f0fdf4' : 'transparent',
                             }}
                           >
-                            {renderActions(appt)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                            <td style={{ padding: '6px 8px', fontWeight: 'bold' }}>
+                              {appt.serialNo}
+                            </td>
+                            <td style={{ padding: '6px 8px' }}>{appt.name}</td>
+                            {!isSmallScreen && (
+                              <td style={{ padding: '6px 8px' }}>{appt.age || '-'}</td>
+                            )}
+                            <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
+                              {appt.mobile}
+                            </td>
+                            <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
+                              {appt.bookingDate}
+                            </td>
+                            {!isSmallScreen && (
+                              <td style={{ padding: '6px 8px' }}>
+                                {appt.referralSource || '-'}
+                              </td>
+                            )}
+                            {!isSmallScreen && (
+                              <td style={{ padding: '6px 8px' }}>
+                                {appt.marketingOfficer || '-'}
+                              </td>
+                            )}
+                            <td style={{ padding: '6px 8px' }}>
+                              {canPatientTypeChange && appt.patientId ? (
+                                <select
+                                  value={patientType}
+                                  onChange={(e) =>
+                                    handleManualCategoryChange(
+                                      appt.id,
+                                      appt.patientId,
+                                      e.target.value
+                                    )
+                                  }
+                                  disabled={isUpdating}
+                                  style={{
+                                    padding: '3px 6px',
+                                    borderRadius: '4px',
+                                    fontSize: '11px',
+                                    fontWeight: '600',
+                                    border: '1px solid #cbd5e1',
+                                    background:
+                                      patientType === 'নতুন'
+                                        ? '#dcfce7'
+                                        : patientType === 'রিপোর্ট'
+                                        ? '#fef3c7'
+                                        : patientType === 'ফলোআপ'
+                                        ? '#dbeafe'
+                                        : '#f1f5f9',
+                                    color:
+                                      patientType === 'নতুন'
+                                        ? '#166534'
+                                        : patientType === 'রিপোর্ট'
+                                        ? '#92400e'
+                                        : patientType === 'ফলোআপ'
+                                        ? '#1e40af'
+                                        : '#64748b',
+                                    cursor: isUpdating ? 'not-allowed' : 'pointer',
+                                    minWidth: '70px',
+                                  }}
+                                >
+                                  <option value="নতুন">নতুন</option>
+                                  <option value="রিপোর্ট">রিপোর্ট</option>
+                                  <option value="ফলোআপ">ফলোআপ</option>
+                                </select>
+                              ) : (
+                                <span
+                                  style={{
+                                    background:
+                                      patientType === 'নতুন'
+                                        ? '#dcfce7'
+                                        : patientType === 'রিপোর্ট'
+                                        ? '#fef3c7'
+                                        : patientType === 'ফলোআপ'
+                                        ? '#dbeafe'
+                                        : '#f1f5f9',
+                                    color:
+                                      patientType === 'নতুন'
+                                        ? '#166534'
+                                        : patientType === 'রিপোর্ট'
+                                        ? '#92400e'
+                                        : patientType === 'ফলোআপ'
+                                        ? '#1e40af'
+                                        : '#64748b',
+                                    padding: '3px 8px',
+                                    borderRadius: '20px',
+                                    fontSize: '11px',
+                                    fontWeight: '600',
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  {patientType}
+                                </span>
+                              )}
+                            </td>
+                            {!isSmallScreen && (
+                              <td style={{ padding: '6px 8px' }}>
+                                {appt.remarks || '-'}
+                              </td>
+                            )}
+                            <td style={{ padding: '6px 8px' }}>
+                              <StatusBadge status={appt.status || 'pending'} />
+                            </td>
+                            <td
+                              style={{
+                                padding: '6px 8px',
+                                display: 'flex',
+                                gap: '3px',
+                                flexWrap: 'wrap',
+                              }}
+                            >
+                              {renderActions(appt)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             ))
           )}
@@ -2236,7 +2273,7 @@ export default function AppointmentsTable({
               borderRadius: '12px',
               maxWidth: '500px',
               width: '100%',
-              padding: '24px',
+              padding: isMobile ? '16px' : '24px',
               position: 'relative',
               maxHeight: '80vh',
               overflowY: 'auto',
@@ -2266,6 +2303,7 @@ export default function AppointmentsTable({
                 color: '#1c5fa8',
                 borderBottom: '1px solid #e2e8f0',
                 paddingBottom: '10px',
+                fontSize: '16px',
               }}
             >
               {isArchivedView ? '📦 আর্কাইভকৃত বুকিং বিস্তারিত' : 'রোগীর বিস্তারিত তথ্য'}
@@ -2273,8 +2311,9 @@ export default function AppointmentsTable({
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '15px',
+                gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+                gap: '12px',
+                fontSize: '13px',
               }}
             >
               <div>
@@ -2297,7 +2336,7 @@ export default function AppointmentsTable({
                 <br />
                 <span style={{ fontWeight: '700' }}>{viewDetails.gender || '-'}</span>
               </div>
-              <div style={{ gridColumn: '1 / -1' }}>
+              <div style={{ gridColumn: isMobile ? 'auto' : '1 / -1' }}>
                 <strong>ঠিকানা:</strong>
                 <br />
                 <span style={{ fontWeight: '700' }}>{viewDetails.address || '-'}</span>
@@ -2339,7 +2378,7 @@ export default function AppointmentsTable({
                 </span>
               </div>
               {viewDetails.referredDoctorName && (
-                <div style={{ gridColumn: '1 / -1' }}>
+                <div style={{ gridColumn: isMobile ? 'auto' : '1 / -1' }}>
                   <strong>রেফারিং ডাক্তার:</strong>
                   <br />
                   <span style={{ fontWeight: '700' }}>
@@ -2354,7 +2393,7 @@ export default function AppointmentsTable({
                   {viewDetails.marketingOfficer || '-'}
                 </span>
               </div>
-              <div style={{ gridColumn: '1 / -1' }}>
+              <div style={{ gridColumn: isMobile ? 'auto' : '1 / -1' }}>
                 <strong>রোগীর টাইপ:</strong>
                 <br />
                 <span style={{ fontWeight: '700' }}>
@@ -2363,13 +2402,13 @@ export default function AppointmentsTable({
                     'অজানা'}
                 </span>
               </div>
-              <div style={{ gridColumn: '1 / -1' }}>
+              <div style={{ gridColumn: isMobile ? 'auto' : '1 / -1' }}>
                 <strong>রিমার্কস:</strong>
                 <br />
                 <span style={{ fontWeight: '700' }}>{viewDetails.remarks || '-'}</span>
               </div>
               {viewDetails.confirmNote && (
-                <div style={{ gridColumn: '1 / -1' }}>
+                <div style={{ gridColumn: isMobile ? 'auto' : '1 / -1' }}>
                   <strong style={{ color: '#d97706' }}>📌 কনফার্ম নোট:</strong>
                   <br />
                   <span style={{ fontWeight: '700', color: '#92400e' }}>
@@ -2377,7 +2416,7 @@ export default function AppointmentsTable({
                   </span>
                 </div>
               )}
-              <div style={{ gridColumn: '1 / -1' }}>
+              <div style={{ gridColumn: isMobile ? 'auto' : '1 / -1' }}>
                 <strong>স্ট্যাটাস:</strong>
                 <br />
                 <StatusBadge status={viewDetails.status || 'pending'} />
@@ -2387,7 +2426,7 @@ export default function AppointmentsTable({
                 <>
                   <div
                     style={{
-                      gridColumn: '1 / -1',
+                      gridColumn: isMobile ? 'auto' : '1 / -1',
                       marginTop: '8px',
                       borderTop: '1px solid #e2e8f0',
                       paddingTop: '12px',
@@ -2420,9 +2459,7 @@ export default function AppointmentsTable({
         </div>
       )}
 
-      {/* ==========================================
-          ✅ Confirm Message Modal
-          ========================================== */}
+      {/* Confirm Message Modal */}
       {confirmModalAppt && (
         <ConfirmMessageModal
           appointment={confirmModalAppt}
@@ -2432,9 +2469,7 @@ export default function AppointmentsTable({
         />
       )}
 
-      {/* ==========================================
-          ✅ Edit Booking Modal (date/doctor change)
-          ========================================== */}
+      {/* Edit Booking Modal */}
       {editBookingModalAppt && (
         <EditBookingModal
           appointment={editBookingModalAppt}

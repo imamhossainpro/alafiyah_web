@@ -32,8 +32,14 @@ function App() {
         <Suspense fallback={<Loader />}>
           <Routes>
             <Route path="/" element={<DoctorPanelBuilder />} />
-            <Route path="/login" element={<DoctorPanelBuilder />} />      {/* ⭐ নতুন */}
+            <Route path="/login" element={<DoctorPanelBuilder />} />
+
+            {/* ✅ Doctor-specific booking — MUST come BEFORE /booking */}
+            <Route path="/booking/:doctorId" element={<DoctorPanelBuilder />} />
+
+            {/* Generic booking (all doctors) */}
             <Route path="/booking" element={<DoctorPanelBuilder />} />
+
             <Route path="/doctors" element={<DoctorPanelBuilder />} />
             <Route path="/edit" element={<DoctorPanelBuilder />} />
             <Route path="/dashboard" element={<DoctorPanelBuilder />} />
