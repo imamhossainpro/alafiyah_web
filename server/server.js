@@ -2,12 +2,12 @@
 // ==================================================
 // 🏥 আল-আফিয়া হাসপাতাল — Backend Server
 // ==================================================
-// ✅ WhatsApp via Baileys
+// ✅ WhatsApp via Baileys (v6.7.9)
 // ✅ SMS via sms.net.bd (English only)
 // ✅ Email via Gmail
 // ✅ FCM Push Notifications
-// ✅ Uses nameEn / doctorNameEn (no transliteration needed)
-// ✅ Custom Confirm Message API
+// ✅ Uses nameEn / doctorNameEn (no transliteration)
+// ✅ Service account from env variable OR file
 // ==================================================
 require('dotenv').config();
 const express = require('express');
@@ -27,12 +27,30 @@ const { initializeApp, cert } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
 const { getMessaging } = require('firebase-admin/messaging');
 
+// ==================================================
+// ✅ Load service account (env variable OR file)
+// ==================================================
 let serviceAccount;
+
 try {
-  serviceAccount = require('./serviceAccountKey.json');
-  console.log('✅ serviceAccountKey.json loaded');
+  // Option 1: Load from environment variable (base64 encoded) — for production
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    const decoded = Buffer.from(
+      process.env.FIREBASE_SERVICE_ACCOUNT,
+      'base64'
+    ).toString('utf-8');
+    serviceAccount = JSON.parse(decoded);
+    console.log('✅ serviceAccount loaded from env variable');
+  } else {
+    // Option 2: Load from file — for local development
+    serviceAccount = require('./serviceAccountKey.json');
+    console.log('✅ serviceAccountKey.json loaded');
+  }
 } catch (err) {
-  console.error('❌ serviceAccountKey.json not found!');
+  console.error('❌ serviceAccount not found!');
+  console.error('   → Set FIREBASE_SERVICE_ACCOUNT env variable (base64), OR');
+  console.error('   → Add serviceAccountKey.json file in server folder');
+  console.error('   Error:', err.message);
   process.exit(1);
 }
 
@@ -337,7 +355,6 @@ async function sendHospitalNotification(data, appointmentId) {
   const jid = HOSPITAL_WHATSAPP + '@s.whatsapp.net';
   const formattedDate = formatDateDDMMYYYY(data.bookingDate);
 
-  // ✅ Use English fields directly (no transliteration)
   const englishPatientName = data.nameEn || data.name || '';
   const englishDoctorName = data.doctorNameEn || data.doctorName || '';
   const englishDoctorDept = data.doctorDept || '';
@@ -378,7 +395,6 @@ Admin confirm korle patient SMS/Email pabe.`;
 // 🆕 TRIGGER 2: Admin Confirm → Patient SMS + Email + In-App + FCM
 // ==================================================
 async function sendPatientConfirmation(data, appointmentId) {
-  // ✅ Use English fields directly (no transliteration)
   const englishPatientName = data.nameEn || data.name || '';
   const englishDoctorName = data.doctorNameEn || data.doctorName || '';
 
@@ -568,7 +584,6 @@ app.post('/api/queue/next', async (req, res) => {
       fcmTokens = [userData.fcmToken];
     }
 
-    // ✅ Use English doctor name
     const englishDoctorName = appointment.doctorNameEn || appointment.doctorName || '';
 
     let fcmResult = { success: false, error: 'No FCM token' };
