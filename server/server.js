@@ -2,13 +2,6 @@
 // ==================================================
 // 🏥 আল-আফিয়া হাসপাতাল — Backend Server
 // ==================================================
-// ✅ WhatsApp via Baileys
-// ✅ SMS via sms.net.bd (no emoji, English only)
-// ✅ Email via Gmail
-// ✅ FCM Push Notifications
-// ✅ Bengali → English transliteration for names
-// ✅ Custom Confirm Message API
-// ==================================================
 require('dotenv').config();
 const express = require('express');
 const makeWASocket = require('@whiskeysockets/baileys').default;
@@ -21,6 +14,9 @@ const pino = require('pino');
 const qrcode = require('qrcode-terminal');
 const nodemailer = require('nodemailer');
 const axios = require('axios');
+
+// ✅ Import transliteration helper
+const { transliterateToEnglish } = require('./transliterate');
 
 // ---------- Firebase Admin ----------
 const { initializeApp, cert } = require('firebase-admin/app');
@@ -107,63 +103,6 @@ function formatDateDDMMYYYY(dateStr) {
     return `${parts[2]}-${parts[1]}-${parts[0]}`;
   }
   return dateStr;
-}
-
-// ==================================================
-// ✅ Bengali → English Transliteration
-// ==================================================
-const BN_TO_EN_MAP = {
-  // Vowels
-  'অ': 'O', 'আ': 'A', 'ই': 'I', 'ঈ': 'I', 'উ': 'U', 'ঊ': 'U',
-  'ঋ': 'Ri', 'এ': 'E', 'ঐ': 'Oi', 'ও': 'O', 'ঔ': 'Ou',
-  // Vowel signs
-  'া': 'a', 'ি': 'i', 'ী': 'i', 'ু': 'u', 'ূ': 'u', 'ৃ': 'ri',
-  'ে': 'e', 'ৈ': 'oi', 'ো': 'o', 'ৌ': 'ou',
-  // Consonants
-  'ক': 'K', 'খ': 'Kh', 'গ': 'G', 'ঘ': 'Gh', 'ঙ': 'Ng',
-  'চ': 'Ch', 'ছ': 'Chh', 'জ': 'J', 'ঝ': 'Jh', 'ঞ': 'Ny',
-  'ট': 'T', 'ঠ': 'Th', 'ড': 'D', 'ঢ': 'Dh', 'ণ': 'N',
-  'ত': 'T', 'থ': 'Th', 'দ': 'D', 'ধ': 'Dh', 'ন': 'N',
-  'প': 'P', 'ফ': 'Ph', 'ব': 'B', 'ভ': 'Bh', 'ম': 'M',
-  'য': 'Y', 'র': 'R', 'ল': 'L', 'শ': 'Sh', 'ষ': 'Sh', 'স': 'S', 'হ': 'H',
-  'ড়': 'R', 'ঢ়': 'Rh', 'য়': 'Y', 'ৎ': 't', 'ং': 'ng', 'ঃ': 'h', 'ঁ': '',
-  // Numbers
-  '০': '0', '১': '1', '২': '2', '৩': '3', '৪': '4',
-  '৫': '5', '৬': '6', '৭': '7', '৮': '8', '৯': '9',
-  // Punctuation
-  '।': '.', '্': '',
-};
-
-/**
- * Bengali → English transliteration
- * - Handles "ডাঃ", "মোঃ", "মোছাঃ" special cases
- * - Preserves English, spaces, punctuation
- */
-function transliterateToEnglish(text) {
-  if (!text) return '';
-  if (typeof text !== 'string') return String(text);
-
-  // Special-case prefixes / honorifics
-  let result = text
-    .replace(/ডাঃ/g, 'Dr. ')
-    .replace(/ডা\./g, 'Dr. ')
-    .replace(/মোঃ/g, 'M. ')
-    .replace(/মোছাঃ/g, 'Mst. ')
-    .replace(/মিসেস/g, 'Mrs. ')
-    .replace(/মিস্টার/g, 'Mr. ')
-    .replace(/শ্রী/g, 'Sri ');
-
-  let out = '';
-  for (let i = 0; i < result.length; i++) {
-    const ch = result[i];
-    if (BN_TO_EN_MAP[ch] !== undefined) {
-      out += BN_TO_EN_MAP[ch];
-    } else {
-      out += ch;
-    }
-  }
-
-  return out.replace(/\s+/g, ' ').trim();
 }
 
 // ==================================================
@@ -394,7 +333,6 @@ async function sendHospitalNotification(data, appointmentId) {
   const jid = HOSPITAL_WHATSAPP + '@s.whatsapp.net';
   const formattedDate = formatDateDDMMYYYY(data.bookingDate);
 
-  // ✅ Transliterate Bengali → English
   const englishPatientName = transliterateToEnglish(data.name || '');
   const englishDoctorName = transliterateToEnglish(data.doctorName || '');
   const englishDoctorDept = transliterateToEnglish(data.doctorDept || '');
@@ -433,10 +371,8 @@ Admin confirm korle patient SMS/Email pabe.`;
 
 // ==================================================
 // 🆕 TRIGGER 2: Admin Confirm → Patient SMS + Email + In-App + FCM
-// ✅ No emoji, English only, transliterated names
 // ==================================================
 async function sendPatientConfirmation(data, appointmentId) {
-  // ✅ Transliterate Bengali → English
   const englishPatientName = transliterateToEnglish(data.name || '');
   const englishDoctorName = transliterateToEnglish(data.doctorName || '');
 
@@ -444,7 +380,6 @@ async function sendPatientConfirmation(data, appointmentId) {
   const serial = data.serialNo || '';
   const arrivalTime = data.doctorTime || 'As scheduled';
 
-  // ---------- SMS body (plain text, no emoji) ----------
   const smsText = `Al-Afiyah Hospital
 Dear ${englishPatientName},
 Serial: ${serial}
@@ -453,7 +388,6 @@ Date: ${formattedDate}
 Time: ${arrivalTime}
 Booking Confirmed. Thank you.`;
 
-  // ---------- Email HTML (same content, styled) ----------
   const emailHtml = `
     <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; border: 1px solid #e2e8f0; padding: 24px; border-radius: 12px;">
       <h2 style="color: #1c5fa8; margin-top: 0;">Al-Afiyah Hospital</h2>
@@ -846,7 +780,7 @@ app.get('/', (req, res) => {
 });
 
 // ==================================================
-// 🔥 FIREBASE লিসেনার — Auto-trigger on pending → confirmed
+// 🔥 FIREBASE লিসেনার
 // ==================================================
 const previousStatuses = new Map();
 const appointmentsPath = `hospitals/${HOSPITAL_ID}/appointments`;
@@ -949,18 +883,14 @@ app.listen(PORT, () => {
   console.log(`🌐 CORS allowed origins: ${ALLOWED_ORIGINS.join(', ')}\n`);
 });
 
-// ---------- WhatsApp কানেকশন শুরু ----------
 connectToWhatsApp();
 
-// ---------- Graceful Shutdown ----------
 process.on('SIGINT', () => {
   console.log('\n\n🛑 Server shutting down...');
   if (sock) {
     try {
       sock.end(undefined);
-    } catch (e) {
-      // ignore
-    }
+    } catch (e) {}
   }
   process.exit(0);
 });
