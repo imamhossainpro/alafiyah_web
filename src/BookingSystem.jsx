@@ -5,7 +5,7 @@
 // ✅ Only ONE name field — English letters only
 // ✅ Direct doctor link support (preselectedDoctorId)
 // ✅ Date picker: only enabled on doctor's chamber days
-// ✅ Doctor image shown in profile card
+// ✅ Doctor image + quals + workplace + specialty in profile card
 // ✅ Referral source NOT auto-selected (patient chooses)
 // ==================================================
 import React, { useState, useEffect, useMemo } from 'react';
@@ -166,9 +166,11 @@ const BookingCSS = `
   .doctor-profile-avatar { width: 80px; height: 80px; border-radius: 50%; background: rgba(255,255,255,0.2); border: 3px solid rgba(255,255,255,0.5); margin: 0 auto 12px; display: flex; align-items: center; justify-content: center; font-size: 32px; font-weight: 800; overflow: hidden; padding: 0; }
   .doctor-profile-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
   .doctor-profile-name { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
-  .doctor-profile-specialty { font-size: 14px; opacity: 0.9; margin-bottom: 10px; }
-  .doctor-profile-dept { display: inline-block; background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
-  .doctor-profile-times { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 12px; }
+  .doctor-profile-specialty { font-size: 15px; font-weight: 700; color: #fef3c7; margin-bottom: 6px; }
+  .doctor-profile-quals { font-size: 13px; opacity: 0.95; line-height: 1.5; white-space: pre-line; margin-bottom: 6px; }
+  .doctor-profile-workplace { font-size: 13px; opacity: 0.9; line-height: 1.5; white-space: pre-line; margin-bottom: 8px; }
+  .doctor-profile-dept { display: inline-block; background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+  .doctor-profile-times { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 10px; }
   .doctor-profile-time { background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
 
   /* Allowed days hint */
@@ -274,7 +276,6 @@ export default function BookingSystem({ departments, panels, preselectedDoctorId
     mobile: '',
     gender: 'পুরুষ',
     address: '',
-    // ✅ রোগী নিজে সিলেক্ট করবে — কোনো auto value নেই
     referralSource: '',
     referredDoctorName: '',
     otherReferralNote: '',
@@ -292,9 +293,6 @@ export default function BookingSystem({ departments, panels, preselectedDoctorId
   const [appointmentId, setAppointmentId] = useState(null);
   const [bookedSerialNo, setBookedSerialNo] = useState(null);
 
-  // ==================================================
-  // ✅ Compute allowed days for the preselected doctor
-  // ==================================================
   const doctorAllowedDays = useMemo(() => {
     if (!preselectedDoctorId || !panels || panels.length === 0) return [];
 
@@ -309,9 +307,6 @@ export default function BookingSystem({ departments, panels, preselectedDoctorId
     return allowed;
   }, [preselectedDoctorId, panels]);
 
-  // ==================================================
-  // ✅ Direct booking — load preselected doctor
-  // ==================================================
   useEffect(() => {
     if (!preselectedDoctorId || !departments || departments.length === 0) return;
 
@@ -337,8 +332,6 @@ export default function BookingSystem({ departments, panels, preselectedDoctorId
       setFormData((prev) => ({
         ...prev,
         departmentId: foundDept.id,
-        // ✅ referralSource আর auto-set হচ্ছে না
-        // ✅ referredDoctorName আর auto-set হচ্ছে না
       }));
       console.log('✅ Direct booking: doctor pre-selected:', foundDoctor.name);
     } else {
@@ -346,9 +339,6 @@ export default function BookingSystem({ departments, panels, preselectedDoctorId
     }
   }, [preselectedDoctorId, departments]);
 
-  // ==================================================
-  // ✅ Auto-shift to first allowed day (direct booking)
-  // ==================================================
   useEffect(() => {
     if (!isDirectBooking || doctorAllowedDays.length === 0) return;
 
@@ -376,9 +366,6 @@ export default function BookingSystem({ departments, panels, preselectedDoctorId
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDirectBooking, doctorAllowedDays.join(',')]);
 
-  // ==================================================
-  // ✅ Available doctors for selected date (non-direct mode)
-  // ==================================================
   useEffect(() => {
     if (isDirectBooking) return;
 
@@ -417,9 +404,6 @@ export default function BookingSystem({ departments, panels, preselectedDoctorId
     setSelectedDoctor(null);
   }, [selectedDate, panels, departments, isDirectBooking]);
 
-  // ==================================================
-  // ✅ Direct booking: update day name when date changes
-  // ==================================================
   useEffect(() => {
     if (!isDirectBooking) return;
     const dateObj = new Date(selectedDate + 'T00:00:00');
@@ -427,9 +411,6 @@ export default function BookingSystem({ departments, panels, preselectedDoctorId
     setSelectedDayName(BANGLA_DAYS[englishDay]);
   }, [selectedDate, isDirectBooking]);
 
-  // ==================================================
-  // ✅ Keyboard handler — blocks Bengali in name field
-  // ==================================================
   const handleNameKeyDown = (e) => {
     if (
       e.key === 'Backspace' ||
@@ -485,7 +466,6 @@ export default function BookingSystem({ departments, panels, preselectedDoctorId
       mobile: '',
       gender: 'পুরুষ',
       address: '',
-      // ✅ Reset করার পরেও খালি থাকবে
       referralSource: '',
       referredDoctorName: '',
       otherReferralNote: '',
@@ -507,7 +487,6 @@ export default function BookingSystem({ departments, panels, preselectedDoctorId
     setLoading(true);
     setSuccessMsg('');
     try {
-      // ---------- Validation ----------
       if (!formData.nameEn.trim()) throw new Error('রোগীর নাম লিখুন');
       if (!/^[A-Za-z\s.\-']+$/.test(formData.nameEn.trim())) {
         throw new Error('রোগীর নাম শুধু ইংরেজি অক্ষরে লিখুন');
@@ -531,9 +510,6 @@ export default function BookingSystem({ departments, panels, preselectedDoctorId
         throw new Error('hospitalId অবশ্যই একটি স্ট্রিং হতে হবে।');
       }
 
-      // ==================================================
-      // ১. Patient তৈরি / খোঁজ
-      // ==================================================
       const patientName = formData.nameEn.trim();
 
       let patient = await findPatientByMobile(hospitalId, formData.mobile);
@@ -566,9 +542,6 @@ export default function BookingSystem({ departments, panels, preselectedDoctorId
         });
       }
 
-      // ==================================================
-      // ২. Serial Number
-      // ==================================================
       const bookingDateStr = selectedDate;
       const counterKey = `${selectedDoctor.id}_${bookingDateStr}`;
       const counterRef = doc(db, 'hospitals', hospitalId, 'counters', counterKey);
@@ -599,11 +572,6 @@ export default function BookingSystem({ departments, panels, preselectedDoctorId
         });
       }
 
-      // ==================================================
-      // ৩. Appointment তৈরি
-      // ==================================================
-      // ✅ Direct booking-এ "Doctor Link" auto-tag যুক্ত করা হচ্ছে (analytics-এর জন্য)
-      //    কিন্তু dropdown-এ রোগী নিজে যা সিলেক্ট করেছে সেটাই সংরক্ষিত হবে
       const finalReferralSource = formData.referralSource || 
         (isDirectBooking ? 'Doctor Link' : 'Walk-in / নিজে এসেছেন');
 
@@ -741,7 +709,7 @@ export default function BookingSystem({ departments, panels, preselectedDoctorId
           <form onSubmit={handleSubmit}>
             <h2 className="booking-title">রোগীর ডাক্তার বুকিং ফর্ম</h2>
 
-            {/* ✅ Doctor Profile Card — with image */}
+            {/* ✅ Doctor Profile Card — with image, quals, workplace, specialty */}
             {isDirectBooking && selectedDoctor && (
               <div className="doctor-profile-card">
                 <div className="doctor-profile-avatar">
@@ -755,12 +723,23 @@ export default function BookingSystem({ departments, panels, preselectedDoctorId
                   )}
                 </div>
                 <div className="doctor-profile-name">{selectedDoctor.name}</div>
+
                 {selectedDoctor.specialty && (
                   <div className="doctor-profile-specialty">{selectedDoctor.specialty}</div>
                 )}
+
+                {selectedDoctor.quals && (
+                  <div className="doctor-profile-quals">{selectedDoctor.quals}</div>
+                )}
+
+                {selectedDoctor.workplace && (
+                  <div className="doctor-profile-workplace">{selectedDoctor.workplace}</div>
+                )}
+
                 {selectedDoctor.deptName && (
                   <div className="doctor-profile-dept">{selectedDoctor.deptName}</div>
                 )}
+
                 {selectedDoctor.timeSlots && selectedDoctor.timeSlots.length > 0 && (
                   <div className="doctor-profile-times">
                     {selectedDoctor.timeSlots.map((slot, idx) => (
@@ -773,7 +752,6 @@ export default function BookingSystem({ departments, panels, preselectedDoctorId
               </div>
             )}
 
-            {/* ✅ Allowed days hint */}
             {isDirectBooking && doctorAllowedDays.length > 0 && (
               <div className="allowed-days-hint">
                 <CalendarDays size={16} />
@@ -942,7 +920,6 @@ export default function BookingSystem({ departments, panels, preselectedDoctorId
               )}
             </div>
 
-            {/* Doctor selection — only in non-direct mode */}
             {!isDirectBooking && (
               <div className="form-section">
                 <div className="section-title">
