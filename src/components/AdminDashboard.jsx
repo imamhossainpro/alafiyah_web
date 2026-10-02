@@ -31,8 +31,7 @@ const DisplaySettings = lazy(() => import('./admin/DisplaySettings'));
 const LocationManager = lazy(() => import('./admin/LocationManager'));
 const UserAccessManager = lazy(() => import('./admin/UserAccessManager'));
 const QueueControlPanel = lazy(() => import('./admin/QueueControlPanel'));
-const PromoManager = lazy(() => import('./admin/PromoManager'));  // ✅ নতুন
-// ❌ ReportVaultManager — removed (Phase 6 simplified)
+const PromoManager = lazy(() => import('./admin/PromoManager'));
 
 // ==================================================
 // ✅ Tab Loader
@@ -91,6 +90,10 @@ export default function AdminDashboard({ user: propUser }) {
   const [endDate, setEndDate] = useState('2030-12-31');
   const [filterPreset, setFilterPreset] = useState('all');
 
+  // ✅ NEW: Departments + Panels (for EditBookingModal)
+  const [departments, setDepartments] = useState([]);
+  const [panels, setPanels] = useState([]);
+
   // ==================================================
   // ✅ Initial Load – Marketing Team
   // ==================================================
@@ -136,6 +139,43 @@ export default function AdminDashboard({ user: propUser }) {
       }
     );
     return () => unsub();
+  }, [hospitalId]);
+
+  // ==================================================
+  // ✅ NEW: Real-time Departments + Panels
+  // (needed by EditBookingModal for date-wise doctor list)
+  // ==================================================
+  useEffect(() => {
+    if (!hospitalId) return;
+
+    const deptRef = collection(db, 'hospitals', hospitalId, 'departments');
+    const unsubDept = onSnapshot(
+      deptRef,
+      (snapshot) => {
+        const data = snapshot.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+        console.log('📚 [AdminDashboard] departments loaded:', data.length);
+        setDepartments(data);
+      },
+      (err) => console.error('❌ Departments listener error:', err)
+    );
+
+    const panelRef = collection(db, 'hospitals', hospitalId, 'panels');
+    const unsubPanel = onSnapshot(
+      panelRef,
+      (snapshot) => {
+        const data = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+        console.log('📚 [AdminDashboard] panels loaded:', data.length);
+        setPanels(data);
+      },
+      (err) => console.error('❌ Panels listener error:', err)
+    );
+
+    return () => {
+      unsubDept();
+      unsubPanel();
+    };
   }, [hospitalId]);
 
   // ==================================================
@@ -251,10 +291,7 @@ export default function AdminDashboard({ user: propUser }) {
       alert('❌ আপনার restore permission নেই।');
       return;
     }
-    if (
-      !window.confirm('এই booking-টি আবার Booking List-এ ফিরিয়ে আনতে চান?')
-    )
-      return;
+    if (!window.confirm('এই booking-টি আবার Booking List-এ ফিরিয়ে আনতে চান?')) return;
 
     const appt = appointments.find((a) => a.id === appointmentId);
     if (!appt) return;
@@ -291,12 +328,7 @@ export default function AdminDashboard({ user: propUser }) {
     if (!appt) return;
 
     if (!window.confirm('এই booking-টি স্থায়ীভাবে মুছে ফেলতে চান?')) return;
-    if (
-      !window.confirm(
-        '⚠️ এই action-এর পরে booking আর restore করা যাবে না। আপনি কি নিশ্চিত?'
-      )
-    )
-      return;
+    if (!window.confirm('⚠️ এই action-এর পরে booking আর restore করা যাবে না। আপনি কি নিশ্চিত?')) return;
 
     try {
       await permanentlyDeleteArchived(hospitalId, appointmentId);
@@ -537,7 +569,7 @@ export default function AdminDashboard({ user: propUser }) {
             </button>
           )}
 
-          {/* ✅ Promo Manager — নতুন */}
+          {/* ✅ Promo Manager */}
           {can('dashboard.view') && (
             <button
               onClick={() => {
@@ -730,7 +762,7 @@ export default function AdminDashboard({ user: propUser }) {
         </SafeArea>
       )}
 
-      {/* ✅ Promo Manager — নতুন */}
+      {/* ✅ Promo Manager */}
       {tab === 'promo' && can('dashboard.view') && (
         <SafeArea>
           <Suspense fallback={<TabLoader />}>
@@ -752,6 +784,8 @@ export default function AdminDashboard({ user: propUser }) {
               user={user}
               marketingTeam={marketingTeam}
               onAppointmentsChange={refreshData}
+              departments={departments}
+              panels={panels}
             />
           </Suspense>
         </SafeArea>

@@ -1,6 +1,8 @@
 // src/components/admin/AppointmentsTable.jsx
 // ==================================================
-// 📋 AppointmentsTable — With Date Filter
+// 📋 AppointmentsTable — With Date Filter + Confirm Modal
+// ==================================================
+// ✅ Fixed: departments + panels props for EditBookingModal
 // ==================================================
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { AppointmentsTableSkeleton } from '../ui/SkeletonScreens';
@@ -38,6 +40,8 @@ import {
   LOG_MODULES,
   LOG_ACTIONS,
 } from '../../services/activityLogService';
+import ConfirmMessageModal from './ConfirmMessageModal';
+import EditBookingModal from '../EditBookingModal';
 
 // ==================================================
 // ✅ Status Badge
@@ -136,13 +140,11 @@ const toDateString = (date) => {
   return `${year}-${month}-${day}`;
 };
 
-// ✅ Booking date → YYYY-MM-DD (safe)
 const normalizeBookingDate = (bookingDate) => {
   if (!bookingDate) return null;
   if (typeof bookingDate === 'string') return bookingDate.split('T')[0];
   if (bookingDate?.toDate) return toDateString(bookingDate.toDate());
-  if (bookingDate?.seconds)
-    return toDateString(new Date(bookingDate.seconds * 1000));
+  if (bookingDate?.seconds) return toDateString(new Date(bookingDate.seconds * 1000));
   try {
     return toDateString(new Date(bookingDate));
   } catch {
@@ -236,6 +238,8 @@ export default function AppointmentsTable({
   user,
   marketingTeam = [],
   onAppointmentsChange,
+  departments = [],   // ✅ NEW
+  panels = [],        // ✅ NEW
 }) {
   const { currentHospital } = useHospital();
   const hospitalId = currentHospital?.id;
@@ -256,6 +260,12 @@ export default function AppointmentsTable({
   const [datePreset, setDatePreset] = useState('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+
+  // ✅ Confirm Modal State
+  const [confirmModalAppt, setConfirmModalAppt] = useState(null);
+
+  // ✅ Edit Booking Modal State
+  const [editBookingModalAppt, setEditBookingModalAppt] = useState(null);
 
   const userModifiedRef = useRef(new Set());
   const [initialLoadDone, setInitialLoadDone] = useState(false);
@@ -288,7 +298,6 @@ export default function AppointmentsTable({
       setStartDate('');
       setEndDate('');
     } else if (preset === 'custom') {
-      // চাইলে custom ডেট নিয়ে কাজ করব
       return;
     } else {
       const range = getDateRange(preset);
@@ -298,7 +307,7 @@ export default function AppointmentsTable({
   };
 
   // ==================================================
-  // ✅ Filter & Sort (with Date filter)
+  // ✅ Filter & Sort
   // ==================================================
   const uniqueDoctors = useMemo(() => {
     const doctors = new Set();
@@ -321,7 +330,7 @@ export default function AppointmentsTable({
   const filteredAppointments = useMemo(() => {
     let filtered = appointments;
 
-    // ✅ ১. Date Filter (প্রথমে apply হবে)
+    // ✅ ১. Date Filter
     if (startDate && endDate) {
       filtered = filtered.filter((a) => {
         const apptDate = normalizeBookingDate(a.bookingDate);
@@ -475,14 +484,61 @@ export default function AppointmentsTable({
     if (!appt || !appt.isNew || updatingHighlight) return;
     try {
       setUpdatingHighlight(apptId);
-      await updateDoc(
-        doc(db, 'hospitals', hospitalId, 'appointments', apptId),
-        { isNew: false }
-      );
+      await updateDoc(doc(db, 'hospitals', hospitalId, 'appointments', apptId), {
+        isNew: false,
+      });
     } catch (error) {
       console.error('Error removing highlight:', error);
     } finally {
       setUpdatingHighlight(null);
+    }
+  };
+
+  // ==================================================
+  // ✅ Confirm Modal Handlers
+  // ==================================================
+  const handleOpenConfirmModal = (appt) => {
+    if (!canStatusChange) {
+      alert('❌ আপনার status পরিবর্তন করার permission নেই।');
+      return;
+    }
+    if (!hospitalId) {
+      alert('হাসপাতাল আইডি পাওয়া যায়নি!');
+      return;
+    }
+    setConfirmModalAppt(appt);
+  };
+
+  const handleConfirmSuccess = async () => {
+    console.log('✅ Confirm modal success — refreshing data');
+    try {
+      if (onAppointmentsChange) {
+        await onAppointmentsChange();
+      }
+    } catch (err) {
+      console.error('Refresh error:', err);
+    }
+  };
+
+  // ==================================================
+  // ✅ Edit Booking Modal Handlers
+  // ==================================================
+  const handleOpenEditBookingModal = (appt) => {
+    if (!canEdit && !canStatusChange) {
+      alert('❌ আপনার বুকিং পরিবর্তন করার permission নেই।');
+      return;
+    }
+    if (appt.status === 'completed' || appt.status === 'cancelled') {
+      alert('❌ সম্পন্ন বা বাতিল করা বুকিং পরিবর্তন করা যায় না।');
+      return;
+    }
+    setEditBookingModalAppt(appt);
+  };
+
+  const handleEditBookingSuccess = async () => {
+    console.log('✅ Booking edited successfully');
+    if (onAppointmentsChange) {
+      await onAppointmentsChange();
     }
   };
 
@@ -538,29 +594,19 @@ export default function AppointmentsTable({
 
       if (patientId) {
         try {
-          const patientRef = doc(
-            db,
-            'hospitals',
-            hospitalId,
-            'patients',
-            patientId
-          );
+          const patientRef = doc(db, 'hospitals', hospitalId, 'patients', patientId);
           const patientSnap = await getDoc(patientRef);
 
           if (patientSnap.exists()) {
             const patient = patientSnap.data();
-            let visits = Array.isArray(patient.visits)
-              ? [...patient.visits]
-              : [];
+            let visits = Array.isArray(patient.visits) ? [...patient.visits] : [];
             const doctorName = appointment.doctorName || '';
 
             if (doctorName) {
               if (newCategory === 'নতুন') {
                 visits = visits.filter((v) => v.doctorName !== doctorName);
               } else if (newCategory === 'রিপোর্ট') {
-                const doctorVisits = visits.filter(
-                  (v) => v.doctorName === doctorName
-                );
+                const doctorVisits = visits.filter((v) => v.doctorName === doctorName);
                 if (doctorVisits.length === 0) {
                   const yesterday = new Date();
                   yesterday.setDate(yesterday.getDate() - 1);
@@ -570,9 +616,7 @@ export default function AppointmentsTable({
                   });
                 }
               } else if (newCategory === 'ফলোআপ') {
-                const doctorVisits = visits.filter(
-                  (v) => v.doctorName === doctorName
-                );
+                const doctorVisits = visits.filter((v) => v.doctorName === doctorName);
                 if (doctorVisits.length === 0) {
                   const eightDaysAgo = new Date();
                   eightDaysAgo.setDate(eightDaysAgo.getDate() - 8);
@@ -598,9 +642,7 @@ export default function AppointmentsTable({
           module: LOG_MODULES.BOOKING,
           action: LOG_ACTIONS.PATIENT_TYPE_CHANGE,
           recordId: appointmentId,
-          description: `${
-            appointment.name || 'রোগী'
-          } এর ধরন পরিবর্তন: ${oldCategory} → ${newCategory}`,
+          description: `${appointment.name || 'রোগী'} এর ধরন পরিবর্তন: ${oldCategory} → ${newCategory}`,
           oldValue: oldCategory,
           newValue: newCategory,
           user,
@@ -636,7 +678,7 @@ export default function AppointmentsTable({
   };
 
   // ==================================================
-  // ✅ Edit
+  // ✅ Edit (inline — referral/remarks/officer)
   // ==================================================
   const startEdit = (appt) => {
     if (!canEdit && !canReferralEdit && !canMarketingAssign) {
@@ -689,10 +731,7 @@ export default function AppointmentsTable({
         return;
       }
 
-      await updateDoc(
-        doc(db, 'hospitals', hospitalId, 'appointments', id),
-        updates
-      );
+      await updateDoc(doc(db, 'hospitals', hospitalId, 'appointments', id), updates);
 
       setEditingId(null);
 
@@ -718,6 +757,16 @@ export default function AppointmentsTable({
       alert('❌ আপনার status পরিবর্তন করার permission নেই।');
       return;
     }
+
+    // ✅ যদি 'confirmed' সিলেক্ট করে, তাহলে Confirm Modal খুলব
+    if (newStatus === 'confirmed') {
+      const appt = filteredAppointments.find((a) => a.id === id);
+      if (appt) {
+        handleOpenConfirmModal(appt);
+      }
+      return;
+    }
+
     const appt = filteredAppointments.find((a) => a.id === id);
     if (appt) {
       if (
@@ -836,6 +885,7 @@ export default function AppointmentsTable({
   const renderActions = (appt) => {
     const actions = [];
 
+    // View details
     actions.push(
       <ActionButton
         key="view"
@@ -875,6 +925,24 @@ export default function AppointmentsTable({
     const currentStatus = appt.status || 'pending';
     const nextStatuses = validTransitions[currentStatus] || [];
 
+    // ✅ Edit Booking button (date/doctor change)
+    if (
+      (canEdit || canStatusChange) &&
+      currentStatus !== 'completed' &&
+      currentStatus !== 'cancelled'
+    ) {
+      actions.push(
+        <ActionButton
+          key="editBooking"
+          onClick={() => handleOpenEditBookingModal(appt)}
+          title="তারিখ/ডাক্তার পরিবর্তন করুন"
+          bg="#0891b2"
+          icon={<Calendar size={14} />}
+        />
+      );
+    }
+
+    // QR button
     if ((currentStatus === 'pending' || currentStatus === 'confirmed') && canQR) {
       actions.push(
         <ActionButton
@@ -892,8 +960,8 @@ export default function AppointmentsTable({
         actions.push(
           <ActionButton
             key="confirm"
-            onClick={() => onStatusChange(appt.id, 'confirmed')}
-            title="Confirm করুন"
+            onClick={() => handleOpenConfirmModal(appt)}
+            title="Confirm করুন (মেসেজ এডিটসহ)"
             bg="#3b82f6"
             icon={<CheckCircle size={14} />}
           />
@@ -1003,7 +1071,9 @@ export default function AppointmentsTable({
       >
         <div style={{ fontSize: '64px', marginBottom: '16px' }}>🚫</div>
         <h3 style={{ color: '#dc2626', marginBottom: '8px' }}>Access Denied</h3>
-        <p style={{ color: '#64748b' }}>আপনার বুকিং লিস্ট দেখার permission নেই।</p>
+        <p style={{ color: '#64748b' }}>
+          আপনার বুকিং লিস্ট দেখার permission নেই।
+        </p>
       </div>
     );
   }
@@ -1023,9 +1093,7 @@ export default function AppointmentsTable({
         color: '#1f2937',
       }}
     >
-      {/* ============================================ */}
-      {/* ✅ Header */}
-      {/* ============================================ */}
+      {/* Header */}
       <div
         style={{
           display: 'flex',
@@ -1048,9 +1116,7 @@ export default function AppointmentsTable({
         </div>
       </div>
 
-      {/* ============================================ */}
-      {/* ✅ Date Filter Section — NEW */}
-      {/* ============================================ */}
+      {/* Date Filter Section */}
       {!isArchivedView && (
         <div
           style={{
@@ -1061,7 +1127,6 @@ export default function AppointmentsTable({
             marginBottom: '15px',
           }}
         >
-          {/* Date Section Label */}
           <div
             style={{
               display: 'flex',
@@ -1076,7 +1141,6 @@ export default function AppointmentsTable({
             </strong>
           </div>
 
-          {/* Preset Buttons */}
           <div
             style={{
               display: 'flex',
@@ -1100,9 +1164,7 @@ export default function AppointmentsTable({
                   padding: '6px 14px',
                   background: datePreset === p.key ? '#1c5fa8' : '#fff',
                   color: datePreset === p.key ? '#fff' : '#334155',
-                  border:
-                    '1px solid ' +
-                    (datePreset === p.key ? '#1c5fa8' : '#cbd5e1'),
+                  border: '1px solid ' + (datePreset === p.key ? '#1c5fa8' : '#cbd5e1'),
                   borderRadius: '20px',
                   cursor: 'pointer',
                   fontSize: '13px',
@@ -1114,7 +1176,6 @@ export default function AppointmentsTable({
             ))}
           </div>
 
-          {/* Custom Date Inputs */}
           <div
             style={{
               display: 'flex',
@@ -1209,9 +1270,7 @@ export default function AppointmentsTable({
         </div>
       )}
 
-      {/* ============================================ */}
-      {/* ✅ Main Filter Row */}
-      {/* ============================================ */}
+      {/* Main Filter Row */}
       <div
         style={{
           display: 'flex',
@@ -1399,9 +1458,7 @@ export default function AppointmentsTable({
         )}
       </div>
 
-      {/* ============================================ */}
-      {/* ✅ Active Filter Indicators */}
-      {/* ============================================ */}
+      {/* Active Filter Indicators */}
       {(filterOfficer !== 'all' ||
         filterStatus !== 'all' ||
         filterDoctor !== 'all' ||
@@ -1491,9 +1548,7 @@ export default function AppointmentsTable({
         </div>
       )}
 
-      {/* ============================================ */}
-      {/* ✅ Table / Skeleton / Empty */}
-      {/* ============================================ */}
+      {/* Table / Skeleton / Empty */}
       {!initialLoadDone ? (
         <AppointmentsTableSkeleton rows={isArchivedView ? 5 : 8} />
       ) : appointments.length === 0 ? (
@@ -1649,9 +1704,7 @@ export default function AppointmentsTable({
                     <td style={{ padding: '12px' }}>
                       {appt.doctorName}
                       <br />
-                      <small style={{ color: '#64748b' }}>
-                        {appt.doctorDept}
-                      </small>
+                      <small style={{ color: '#64748b' }}>{appt.doctorDept}</small>
                       {appt.doctorTime && (
                         <>
                           <br />
@@ -1703,8 +1756,7 @@ export default function AppointmentsTable({
                             onChange={(e) => {
                               const selectedId = e.target.value;
                               const officer = marketingTeam.find((m) => {
-                                const id =
-                                  typeof m === 'string' ? m : m.id || m.name;
+                                const id = typeof m === 'string' ? m : m.id || m.name;
                                 return id === selectedId;
                               });
                               const officerName = officer
@@ -1728,10 +1780,8 @@ export default function AppointmentsTable({
                             <option value="">নির্বাচন করুন</option>
                             {marketingTeam.map((m, idx) => {
                               const name = typeof m === 'string' ? m : m.name;
-                              const id =
-                                typeof m === 'string' ? m : m.id || m.name;
-                              const key =
-                                typeof m === 'string' ? idx : m.id || idx;
+                              const id = typeof m === 'string' ? m : m.id || m.name;
+                              const key = typeof m === 'string' ? idx : m.id || idx;
                               return (
                                 <option key={key} value={id}>
                                   {name}
@@ -1979,9 +2029,7 @@ export default function AppointmentsTable({
                   <strong style={{ color: '#1c5fa8', fontSize: '16px' }}>
                     {doctorName}
                   </strong>
-                  <span
-                    style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
-                  >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span
                       style={{
                         background: '#0d9488',
@@ -1996,9 +2044,7 @@ export default function AppointmentsTable({
                     </span>
                     {canPrint && (
                       <button
-                        onClick={() =>
-                          printDoctorWise(doctorName, info.patients)
-                        }
+                        onClick={() => printDoctorWise(doctorName, info.patients)}
                         style={{
                           background: '#1c5fa8',
                           color: '#fff',
@@ -2033,9 +2079,7 @@ export default function AppointmentsTable({
                       <th style={{ padding: '8px 12px' }}>মোবাইল</th>
                       <th style={{ padding: '8px 12px' }}>বুকিং তারিখ</th>
                       <th style={{ padding: '8px 12px' }}>রেফারেল</th>
-                      <th style={{ padding: '8px 12px' }}>
-                        মার্কেটিং অফিসার
-                      </th>
+                      <th style={{ padding: '8px 12px' }}>মার্কেটিং অফিসার</th>
                       <th style={{ padding: '8px 12px' }}>রোগীর টাইপ</th>
                       <th style={{ padding: '8px 12px' }}>রিমার্কস</th>
                       <th style={{ padding: '8px 12px' }}>স্ট্যাটাস</th>
@@ -2044,8 +2088,7 @@ export default function AppointmentsTable({
                   </thead>
                   <tbody>
                     {info.patients.map((appt) => {
-                      const patientType =
-                        patientTypes[appt.id] || 'লোড হচ্ছে...';
+                      const patientType = patientTypes[appt.id] || 'লোড হচ্ছে...';
                       const isUpdating = updatingPatient === appt.id;
                       const isNew = appt.isNew === true;
 
@@ -2058,15 +2101,11 @@ export default function AppointmentsTable({
                             background: isNew ? '#f0fdf4' : 'transparent',
                           }}
                         >
-                          <td
-                            style={{ padding: '10px 12px', fontWeight: 'bold' }}
-                          >
+                          <td style={{ padding: '10px 12px', fontWeight: 'bold' }}>
                             {appt.serialNo}
                           </td>
                           <td style={{ padding: '10px 12px' }}>{appt.name}</td>
-                          <td style={{ padding: '10px 12px' }}>
-                            {appt.age || '-'}
-                          </td>
+                          <td style={{ padding: '10px 12px' }}>{appt.age || '-'}</td>
                           <td style={{ padding: '10px 12px' }}>{appt.mobile}</td>
                           <td style={{ padding: '10px 12px' }}>
                             {appt.bookingDate} ({appt.bookingDay})
@@ -2111,9 +2150,7 @@ export default function AppointmentsTable({
                                       : patientType === 'ফলোআপ'
                                       ? '#1e40af'
                                       : '#64748b',
-                                  cursor: isUpdating
-                                    ? 'not-allowed'
-                                    : 'pointer',
+                                  cursor: isUpdating ? 'not-allowed' : 'pointer',
                                   minWidth: '100px',
                                 }}
                               >
@@ -2193,7 +2230,8 @@ export default function AppointmentsTable({
           }}
           onClick={() => setViewDetails(null)}
         >
-          <div            style={{
+          <div
+            style={{
               background: '#fff',
               borderRadius: '12px',
               maxWidth: '500px',
@@ -2230,9 +2268,7 @@ export default function AppointmentsTable({
                 paddingBottom: '10px',
               }}
             >
-              {isArchivedView
-                ? '📦 আর্কাইভকৃত বুকিং বিস্তারিত'
-                : 'রোগীর বিস্তারিত তথ্য'}
+              {isArchivedView ? '📦 আর্কাইভকৃত বুকিং বিস্তারিত' : 'রোগীর বিস্তারিত তথ্য'}
             </h3>
             <div
               style={{
@@ -2249,9 +2285,7 @@ export default function AppointmentsTable({
               <div>
                 <strong>বয়স:</strong>
                 <br />
-                <span style={{ fontWeight: '700' }}>
-                  {viewDetails.age || '-'}
-                </span>
+                <span style={{ fontWeight: '700' }}>{viewDetails.age || '-'}</span>
               </div>
               <div>
                 <strong>মোবাইল:</strong>
@@ -2261,16 +2295,12 @@ export default function AppointmentsTable({
               <div>
                 <strong>লিঙ্গ:</strong>
                 <br />
-                <span style={{ fontWeight: '700' }}>
-                  {viewDetails.gender || '-'}
-                </span>
+                <span style={{ fontWeight: '700' }}>{viewDetails.gender || '-'}</span>
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
                 <strong>ঠিকানা:</strong>
                 <br />
-                <span style={{ fontWeight: '700' }}>
-                  {viewDetails.address || '-'}
-                </span>
+                <span style={{ fontWeight: '700' }}>{viewDetails.address || '-'}</span>
               </div>
               <div>
                 <strong>বুকিং তারিখ:</strong>
@@ -2282,23 +2312,17 @@ export default function AppointmentsTable({
               <div>
                 <strong>সিরিয়াল:</strong>
                 <br />
-                <span style={{ fontWeight: '700' }}>
-                  {viewDetails.serialNo}
-                </span>
+                <span style={{ fontWeight: '700' }}>{viewDetails.serialNo}</span>
               </div>
               <div>
                 <strong>ডাক্তার:</strong>
                 <br />
-                <span style={{ fontWeight: '700' }}>
-                  {viewDetails.doctorName}
-                </span>
+                <span style={{ fontWeight: '700' }}>{viewDetails.doctorName}</span>
               </div>
               <div>
                 <strong>বিভাগ:</strong>
                 <br />
-                <span style={{ fontWeight: '700' }}>
-                  {viewDetails.doctorDept}
-                </span>
+                <span style={{ fontWeight: '700' }}>{viewDetails.doctorDept}</span>
               </div>
               <div>
                 <strong>সময়:</strong>
@@ -2342,10 +2366,17 @@ export default function AppointmentsTable({
               <div style={{ gridColumn: '1 / -1' }}>
                 <strong>রিমার্কস:</strong>
                 <br />
-                <span style={{ fontWeight: '700' }}>
-                  {viewDetails.remarks || '-'}
-                </span>
+                <span style={{ fontWeight: '700' }}>{viewDetails.remarks || '-'}</span>
               </div>
+              {viewDetails.confirmNote && (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <strong style={{ color: '#d97706' }}>📌 কনফার্ম নোট:</strong>
+                  <br />
+                  <span style={{ fontWeight: '700', color: '#92400e' }}>
+                    {viewDetails.confirmNote}
+                  </span>
+                </div>
+              )}
               <div style={{ gridColumn: '1 / -1' }}>
                 <strong>স্ট্যাটাস:</strong>
                 <br />
@@ -2362,22 +2393,16 @@ export default function AppointmentsTable({
                       paddingTop: '12px',
                     }}
                   >
-                    <strong style={{ color: '#d97706' }}>
-                      📦 আর্কাইভ তথ্য
-                    </strong>
+                    <strong style={{ color: '#d97706' }}>📦 আর্কাইভ তথ্য</strong>
                   </div>
                   <div>
                     <strong>আর্কাইভের তারিখ:</strong>
                     <br />
                     <span style={{ fontWeight: '700' }}>
                       {viewDetails.archivedAt?.toDate
-                        ? viewDetails.archivedAt
-                            .toDate()
-                            .toLocaleString('bn-BD')
+                        ? viewDetails.archivedAt.toDate().toLocaleString('bn-BD')
                         : viewDetails.archivedAt
-                        ? new Date(viewDetails.archivedAt).toLocaleString(
-                            'bn-BD'
-                          )
+                        ? new Date(viewDetails.archivedAt).toLocaleString('bn-BD')
                         : '-'}
                     </span>
                   </div>
@@ -2385,9 +2410,7 @@ export default function AppointmentsTable({
                     <strong>আর্কাইভ করেছেন:</strong>
                     <br />
                     <span style={{ fontWeight: '700' }}>
-                      {viewDetails.archivedByName ||
-                        viewDetails.archivedBy ||
-                        '-'}
+                      {viewDetails.archivedByName || viewDetails.archivedBy || '-'}
                     </span>
                   </div>
                 </>
@@ -2395,6 +2418,31 @@ export default function AppointmentsTable({
             </div>
           </div>
         </div>
+      )}
+
+      {/* ==========================================
+          ✅ Confirm Message Modal
+          ========================================== */}
+      {confirmModalAppt && (
+        <ConfirmMessageModal
+          appointment={confirmModalAppt}
+          hospitalId={hospitalId}
+          onClose={() => setConfirmModalAppt(null)}
+          onSuccess={handleConfirmSuccess}
+        />
+      )}
+
+      {/* ==========================================
+          ✅ Edit Booking Modal (date/doctor change)
+          ========================================== */}
+      {editBookingModalAppt && (
+        <EditBookingModal
+          appointment={editBookingModalAppt}
+          departments={departments}
+          panels={panels}
+          onClose={() => setEditBookingModalAppt(null)}
+          onSuccess={handleEditBookingSuccess}
+        />
       )}
     </div>
   );
