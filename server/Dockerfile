@@ -1,7 +1,6 @@
 # server/Dockerfile
 FROM node:20-slim
 
-# ✅ Install git + build tools (Baileys-এর libsignal git থেকে আসে)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     python3 \
@@ -11,13 +10,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy only package.json
 COPY package.json ./
 
-# ✅ --omit=dev (not --production), and NO --no-package-lock
+# ✅ SSH-এর বদলে HTTPS দিয়ে GitHub ব্যবহার করুন (কোনো SSH key লাগবে না)
+RUN git config --global url."https://github.com/".insteadOf "ssh://git@github.com/" && \
+    git config --global url."https://github.com/".insteadOf "git@github.com:"
+
 RUN npm install --omit=dev --no-audit --no-fund
 
-# Copy source
 COPY . .
 
 EXPOSE 3001
