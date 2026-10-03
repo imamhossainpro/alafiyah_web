@@ -28,6 +28,41 @@ const ICON_KEYS = Object.keys(ICONS);
 const COLOR_THEMES = ['#1c5fa8', '#2f9e52', '#9c3a9c', '#d1392f', '#0e8ca3', '#e0653a', '#2b3f8f', '#159a72', '#8a6a2e', '#7a2d5c', '#4438ab', '#475569'];
 
 // ==================================================
+// ✅ html2canvas ignore helper — PDF/PNG-তে button skip
+// ==================================================
+const html2canvasIgnoreElements = (el) => {
+  if (!el || !el.classList) return false;
+  return (
+    el.classList.contains('serial-booking-button') ||
+    el.classList.contains('no-print')
+  );
+};
+
+// ==================================================
+// ✅ Per-day department ordering helper
+// panel.departmentOrder = array of department IDs
+// ==================================================
+const getOrderedDepartments = (departments, panelDepartmentOrder) => {
+  if (!departments || departments.length === 0) return [];
+
+  // panel-এ departmentOrder না থাকলে fallback: global order
+  if (!panelDepartmentOrder || panelDepartmentOrder.length === 0) {
+    return [...departments].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  }
+
+  const orderMap = {};
+  panelDepartmentOrder.forEach((deptId, index) => {
+    orderMap[deptId] = index;
+  });
+
+  return [...departments].sort((a, b) => {
+    const aOrder = orderMap[a.id] ?? 9999;
+    const bOrder = orderMap[b.id] ?? 9999;
+    return aOrder - bOrder;
+  });
+};
+
+// ==================================================
 // ✅ Time Utilities
 // ==================================================
 const TIME_REGEX = /^(0?[1-9]|1[0-2]):([0-5][0-9])\s?(AM|PM|am|pm)$/;
@@ -242,6 +277,52 @@ const CSS = `
 .dpb .doctor-time-label{font-weight:700;color:#b45309;font-size:13px;margin-right:2px;white-space:nowrap;}
 .dpb .empty-dept-note{font-size:11.5px;color:#6b7280;font-style:italic;}
 
+/* ✅ সিরিয়াল নিন Button */
+.dpb .serial-booking-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 8px 18px;
+  background: linear-gradient(135deg, #0d9488, #0f766e);
+  color: #ffffff !important;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: 'Hind Siliguri', 'Noto Sans Bengali', Arial, sans-serif;
+  text-decoration: none;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(13, 148, 136, 0.25);
+  letter-spacing: 0.3px;
+  width: fit-content;
+  max-width: 100%;
+}
+.dpb .serial-booking-button:hover {
+  background: linear-gradient(135deg, #0f766e, #115e59);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.35);
+}
+.dpb .serial-booking-button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(13, 148, 136, 0.25);
+}
+.dpb .serial-booking-button:focus-visible {
+  outline: 2px solid #0f766e;
+  outline-offset: 2px;
+}
+
+/* ✅ Mobile responsive */
+@media (max-width: 480px) {
+  .dpb .serial-booking-button {
+    width: 100%;
+    padding: 10px 18px;
+    font-size: 13.5px;
+  }
+}
+
 .dpb .poster-footer{display:flex;align-items:center;justify-content:space-between;background:#eef4fb;padding:16px 22px;flex-wrap:wrap;gap:14px;border-top:3px solid #1c5fa8;}
 .dpb .footer-col{display:flex;flex-direction:column;gap:5px;font-size:11.5px;color:#333;}
 .dpb .footer-line{display:flex;align-items:center;gap:6px;white-space:pre-line;font-size:16px;}
@@ -326,8 +407,22 @@ const CSS = `
   .dpb .panel-section { padding: 12px; }
 }
 
-@media print{ .no-print{display:none !important;} .dpb{background:#fff;} .dpb .preview-wrap{max-width:100%;padding:0;margin:0;} .dpb .poster-page{box-shadow:none;border:none;border-radius:0;} .dpb .poster-body{display:grid !important; grid-template-columns: repeat(3, 1fr) !important;} .dpb *{-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact;} }
-@page{margin:10mm;}
+/* ✅ PRINT — সিরিয়াল নিন button hide */
+@media print {
+  .no-print { display: none !important; }
+  .serial-booking-button { display: none !important; }
+  .dpb { background: #fff; }
+  .dpb .preview-wrap { max-width: 100%; padding: 0; margin: 0; }
+  .dpb .poster-page { box-shadow: none; border: none; border-radius: 0; }
+  .dpb .poster-body { display: grid !important; grid-template-columns: repeat(3, 1fr) !important; }
+  .dpb * { -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
+}
+@page { margin: 10mm; }
+
+/* ✅ PDF/PNG generate-এর সময় button hide (fallback) */
+body.generating-poster .dpb .serial-booking-button {
+  display: none !important;
+}
 `;
 
 function SaveIndicator({ status }) {
@@ -606,7 +701,6 @@ function DoctorModal({ initial, onSave, onClose }) {
   );
   const [slotErrors, setSlotErrors] = useState({});
 
-  // ✅ Image state
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(initial?.imageUrl || '');
   const [imageError, setImageError] = useState('');
@@ -694,7 +788,6 @@ function DoctorModal({ initial, onSave, onClose }) {
     if (hasError) { setSlotErrors(errors); alert('সময় স্লটে ত্রুটি আছে। অনুগ্রহ করে ঠিক করুন।'); return; }
     const cleanedSlots = timeSlots.map((slot) => ({ start: standardizeTime(slot.start), end: standardizeTime(slot.end) }));
 
-    // ✅ Vercel Blob-এ image upload
     let finalImageUrl = initial?.imageUrl || '';
     try {
       if (imageFile) {
@@ -718,7 +811,6 @@ function DoctorModal({ initial, onSave, onClose }) {
         finalImageUrl = data.url;
         console.log('✅ Image uploaded:', finalImageUrl);
       } else if (initial?.imageUrl && !imagePreview) {
-        // ✅ ছবি remove করা হয়েছে — পুরোনো URL সরিয়ে দিই
         finalImageUrl = '';
       }
     } catch (err) {
@@ -755,7 +847,6 @@ function DoctorModal({ initial, onSave, onClose }) {
         </div>
         <div className="modal-body">
 
-          {/* ✅ Image Upload Section */}
           <label style={{ fontWeight: '700', display: 'block', marginBottom: '8px' }}>ডাক্তারের ছবি</label>
           <div className="doctor-image-upload" style={{ marginBottom: '16px' }}>
             <div className="doctor-image-preview">
@@ -921,7 +1012,14 @@ function PanelSwitcher({ panels, activePanelId, onSwitch, onAdd, onRename, onDel
   );
 }
 
+// ==================================================
+// ✅ EditPanel — with per-day department ordering
+// ==================================================
 function EditPanel({ panel, departments, footer, checkedIds, allChecked, onUpdateTitle, onUpdateFooter, onUpdatePhone, onAddPhone, onRemovePhone, onAddDept, onEditDept, onDeleteDept, onMoveDept, onAddDoctor, onEditDoctor, onDeleteDoctor, onMoveDoctor, onToggleDoctorChecked, onToggleDeptAllChecked, onToggleAll, clearConfirm, onClearAll, onGoPreview, onShowDoctorLink }) {
+
+  // ✅ panel-এর departmentOrder অনুযায়ী departments সাজান
+  const orderedDepartments = getOrderedDepartments(departments, panel?.departmentOrder);
+
   return (
     <div className="edit-panel">
       <section className="panel-section">
@@ -931,10 +1029,10 @@ function EditPanel({ panel, departments, footer, checkedIds, allChecked, onUpdat
       </section>
       <section className="panel-section">
         <div className="section-header"><label>বিভাগ ও ডাক্তার তালিকা — {panel.name}</label><button className="btn btn-primary" onClick={onAddDept}><Plus size={15} /> নতুন বিভাগ</button></div>
-        <p className="section-hint">প্রতিটি ডাক্তারের পাশের বক্সে টিক দিয়ে বেছে নিন কারা "{panel.name}"-এর পোস্টারে দেখাবে। 🔗 আইকনে ক্লিক করে বুকিং লিংক দেখুন।</p>
+        <p className="section-hint">প্রতিটি ডাক্তারের পাশের বক্সে টিক দিয়ে বেছে নিন কারা "{panel.name}"-এর পোস্টারে দেখাবে। 🔗 আইকনে ক্লিক করে বুকিং লিংক দেখুন। ⬆️⬇️ দিয়ে এই দিনের জন্য বিভাগের ক্রম ঠিক করুন — অন্য দিনের ক্রম অপরিবর্তিত থাকবে।</p>
         {departments.length === 0 ? (<div className="empty-state">এখনো কোনো বিভাগ যোগ করা হয়নি।</div>) : null}
-        {departments.map((dept, i) => (
-          <DepartmentCard key={dept.id} dept={dept} index={i} total={departments.length} checkedIds={checkedIds}
+        {orderedDepartments.map((dept, i) => (
+          <DepartmentCard key={dept.id} dept={dept} index={i} total={orderedDepartments.length} checkedIds={checkedIds}
             onEdit={() => onEditDept(dept)} onDelete={() => onDeleteDept(dept.id)}
             onMoveUp={() => onMoveDept(dept.id, -1)} onMoveDown={() => onMoveDept(dept.id, 1)}
             onAddDoctor={() => onAddDoctor(dept.id)} onEditDoctor={(doc) => onEditDoctor(dept.id, doc)}
@@ -967,7 +1065,15 @@ function EditPanel({ panel, departments, footer, checkedIds, allChecked, onUpdat
 
 function DeptHeader({ dept }) { const Icon = ICONS[dept.icon] || ICONS.Stethoscope; return (<div className="dept-header-wrap"><span className="dept-icon-box" style={{ borderColor: dept.color }}><Icon size={19} color={dept.color} /></span><div className="dept-ribbon" style={{ background: dept.color }}><span>{dept.name}</span></div></div>); }
 
+// ==================================================
+// ✅ DoctorEntry — with "সিরিয়াল নিন" button
+// ==================================================
 function DoctorEntry({ doc, accentColor }) {
+  const hasValidId = doc.id && typeof doc.id === 'string' && doc.id.trim() !== '';
+  const bookingUrl = hasValidId
+    ? `https://doctors.alafiyahhospital.com/booking/${doc.id}`
+    : null;
+
   return (
     <div className="doctor-entry" style={{ borderLeftColor: accentColor }}>
       <div className="doctor-name">{doc.name}</div>
@@ -984,10 +1090,25 @@ function DoctorEntry({ doc, accentColor }) {
           ))}
         </div>
       )}
+
+      {hasValidId && (
+        <a
+          href={bookingUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="serial-booking-button"
+          aria-label={`${doc.name} এর সিরিয়াল নিন`}
+        >
+          সিরিয়াল নিন
+        </a>
+      )}
     </div>
   );
 }
 
+// ==================================================
+// ✅ PreviewPanel — with per-day department ordering
+// ==================================================
 function PreviewPanel({ panel, departments, checkedIds, footer, onBack, user }) {
   const printRef = useRef(null);
   const isAdmin = user?.role === 'admin';
@@ -1002,12 +1123,26 @@ function PreviewPanel({ panel, departments, checkedIds, footer, onBack, user }) 
     const element = printRef.current;
     if (!element) return;
     try {
-      const canvas = await html2canvas(element, { scale: 3, useCORS: true, logging: false, backgroundColor: '#ffffff' });
+      document.body.classList.add('generating-poster');
+
+      const canvas = await html2canvas(element, {
+        scale: 3,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        ignoreElements: html2canvasIgnoreElements,
+      });
+
       const link = document.createElement('a');
       link.download = `${panel?.title || 'poster'}.png`;
       link.href = canvas.toDataURL('image/png');
       link.click();
-    } catch (error) { console.error('PNG download error:', error); alert('PNG ডাউনলোড করতে সমস্যা হয়েছে।'); }
+    } catch (error) {
+      console.error('PNG download error:', error);
+      alert('PNG ডাউনলোড করতে সমস্যা হয়েছে।');
+    } finally {
+      document.body.classList.remove('generating-poster');
+    }
   };
 
   const downloadPDF = async () => {
@@ -1015,7 +1150,16 @@ function PreviewPanel({ panel, departments, checkedIds, footer, onBack, user }) 
     const element = printRef.current;
     if (!element) return;
     try {
-      const canvas = await html2canvas(element, { scale: 3, useCORS: true, logging: false, backgroundColor: '#ffffff' });
+      document.body.classList.add('generating-poster');
+
+      const canvas = await html2canvas(element, {
+        scale: 3,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        ignoreElements: html2canvasIgnoreElements,
+      });
+
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pdfWidth = pdf.internal.pageSize.getWidth();
@@ -1032,11 +1176,20 @@ function PreviewPanel({ panel, departments, checkedIds, footer, onBack, user }) 
         heightLeft -= pdfPageHeight;
       }
       pdf.save(`${panel?.title || 'poster'}.pdf`);
-    } catch (error) { console.error('PDF download error:', error); alert('PDF ডাউনলোড করতে সমস্যা হয়েছে।'); }
+    } catch (error) {
+      console.error('PDF download error:', error);
+      alert('PDF ডাউনলোড করতে সমস্যা হয়েছে।');
+    } finally {
+      document.body.classList.remove('generating-poster');
+    }
   };
 
   const hasChecked = checkedIds && checkedIds.size > 0;
-  const visibleDepartments = departments.map((dept) => ({
+
+  // ✅ panel-এর departmentOrder অনুযায়ী departments সাজান
+  const orderedDepartments = getOrderedDepartments(departments, panel?.departmentOrder);
+
+  const visibleDepartments = orderedDepartments.map((dept) => ({
     ...dept,
     doctors: dept.doctors?.filter((doc) => hasChecked ? checkedIds.has(doc.id) : true) || []
   })).filter((dept) => dept.doctors.length > 0);
@@ -1184,8 +1337,40 @@ export default function DoctorPanelBuilder() {
           return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
         });
 
+        // ✅ Migration: departmentOrder না থাকলে default দিয়ে initialize
+        const defaultDeptOrder = depts.map(d => d.id);
+
+        // যেসব panel-এ departmentOrder নেই, সেগুলোতে যোগ করে Firestore-এ save
+        const panelsNeedingMigration = panelList.filter(
+          p => !p.departmentOrder || p.departmentOrder.length === 0
+        );
+        if (panelsNeedingMigration.length > 0) {
+          await Promise.all(
+            panelsNeedingMigration.map(p =>
+              setDoc(
+                doc(db, 'hospitals', hid, 'panels', p.id),
+                { ...p, departmentOrder: defaultDeptOrder },
+                { merge: true }
+              ).catch(err => console.warn('Migration failed for panel', p.id, err))
+            )
+          );
+        }
+
+        panelList = panelList.map(p => ({
+          ...p,
+          departmentOrder: (p.departmentOrder && p.departmentOrder.length > 0)
+            ? p.departmentOrder
+            : defaultDeptOrder,
+        }));
+
         if (panelList.length === 0) {
-          const defaultPanel = { id: 'শনিবার', name: 'শনিবার', title: 'শনিবারের ডক্টরস প্যানেল', activeDoctorIds: [] };
+          const defaultPanel = {
+            id: 'শনিবার',
+            name: 'শনিবার',
+            title: 'শনিবারের ডক্টরস প্যানেল',
+            activeDoctorIds: [],
+            departmentOrder: defaultDeptOrder,
+          };
           await setDoc(doc(db, 'hospitals', hid, 'panels', 'শনিবার'), defaultPanel);
           panelList = [defaultPanel];
         }
@@ -1264,7 +1449,7 @@ export default function DoctorPanelBuilder() {
     try { await setDoc(doc(db, 'hospitals', hospitalId, 'footer', 'data'), newFooter); } catch (error) { console.error('saveFooter error:', error); }
   };
 
-  const activePanel = panels.find(p => p.id === activePanelId) || (panels.length > 0 ? panels[0] : { id: 'empty', name: 'কোনো প্যানেল নেই', title: 'প্যানেল তৈরি করুন', activeDoctorIds: [] });
+  const activePanel = panels.find(p => p.id === activePanelId) || (panels.length > 0 ? panels[0] : { id: 'empty', name: 'কোনো প্যানেল নেই', title: 'প্যানেল তৈরি করুন', activeDoctorIds: [], departmentOrder: [] });
   const allDoctorIds = departments.flatMap(d => d.doctors?.map(doc => doc.id) || []);
   const allChecked = allDoctorIds.length > 0 && allDoctorIds.every(id => checkedIds.has(id));
 
@@ -1316,28 +1501,67 @@ export default function DoctorPanelBuilder() {
   const handleRemovePhone = (idx) => handleUpdateFooter({ phones: footer.phones.filter((_, i) => i !== idx) });
   const handleAddDept = () => setDeptModal({ mode: 'add' });
   const handleEditDept = (dept) => setDeptModal({ mode: 'edit', dept });
+
+  // ==================================================
+  // ✅ handleSaveDept — নতুন dept হলে সব panel-এর order-এ যোগ
+  // ==================================================
   const handleSaveDept = (fields) => {
-    if (deptModal.mode === 'add') updateDepartments(d => [...d, makeDepartment(fields)], true);
-    else { const deptId = deptModal.dept.id; updateDepartments(d => d.map(dept => dept.id === deptId ? { ...dept, ...fields } : dept), true); }
+    if (deptModal.mode === 'add') {
+      const newDept = makeDepartment(fields);
+      updateDepartments(d => [...d, newDept], true);
+
+      // ✅ সব panel-এর departmentOrder-এর শেষে নতুন dept ID যোগ করুন
+      const newPanels = panels.map(p => ({
+        ...p,
+        departmentOrder: [...(p.departmentOrder || []), newDept.id],
+      }));
+      setPanels(newPanels);
+      newPanels.forEach(p => savePanelToFirebase(p));
+    } else {
+      const deptId = deptModal.dept.id;
+      updateDepartments(d => d.map(dept => dept.id === deptId ? { ...dept, ...fields } : dept), true);
+    }
     setDeptModal(null);
   };
 
+  // ==================================================
+  // ✅ handleDeleteDept — সব panel থেকে dept ID remove
+  // ==================================================
   const handleDeleteDept = (deptId) => {
     const removedIds = departments.find(d => d.id === deptId)?.doctors?.map(doc => doc.id) || [];
     updateDepartments(d => d.filter(dept => dept.id !== deptId), true);
-    const newPanels = panels.map(p => ({ ...p, activeDoctorIds: (p.activeDoctorIds || []).filter(id => !removedIds.includes(id)) }));
+
+    // ✅ সব panel থেকে dept ID remove করুন (activeDoctorIds + departmentOrder)
+    const newPanels = panels.map(p => ({
+      ...p,
+      activeDoctorIds: (p.activeDoctorIds || []).filter(id => !removedIds.includes(id)),
+      departmentOrder: (p.departmentOrder || []).filter(id => id !== deptId),
+    }));
     setPanels(newPanels);
     newPanels.forEach(p => savePanelToFirebase(p));
   };
 
+  // ==================================================
+  // ✅ handleMoveDept — শুধু active panel-এর order বদলান
+  // ==================================================
   const handleMoveDept = (deptId, dir) => {
-    const idx = departments.findIndex(d => d.id === deptId);
+    // active panel-এর বর্তমান departmentOrder (না থাকলে global order)
+    const currentOrder = (activePanel.departmentOrder && activePanel.departmentOrder.length > 0)
+      ? [...activePanel.departmentOrder]
+      : departments.map(d => d.id);
+
+    const idx = currentOrder.indexOf(deptId);
+    if (idx === -1) return;
     const ni = idx + dir;
-    if (ni < 0 || ni >= departments.length) return;
-    const newDepts = [...departments];
-    [newDepts[idx], newDepts[ni]] = [newDepts[ni], newDepts[idx]];
-    updateDepartments(() => newDepts, true);
+    if (ni < 0 || ni >= currentOrder.length) return;
+
+    // Swap
+    [currentOrder[idx], currentOrder[ni]] = [currentOrder[ni], currentOrder[idx]];
+
+    // ✅ শুধু এই panel-এ save (departments-এর global order অপরিবর্তিত)
+    updatePanel(p => ({ ...p, departmentOrder: currentOrder }), true);
   };
+
   const handleAddDoctor = (deptId) => setDoctorModal({ deptId, mode: 'add' });
   const handleEditDoctor = (deptId, doctor) => setDoctorModal({ deptId, mode: 'edit', doctor });
 
@@ -1412,14 +1636,29 @@ export default function DoctorPanelBuilder() {
     const panel = panels.find(p => p.id === panelId);
     if (panel) { setActivePanelId(panelId); setCheckedIds(new Set(panel.activeDoctorIds || [])); }
   };
+
+  // ==================================================
+  // ✅ handleAddPanel — নতুন panel-এ default departmentOrder
+  // ==================================================
   const handleAddPanel = async (fields) => {
-    const newPanel = { id: fields.name, name: fields.name, title: fields.title, activeDoctorIds: fields.duplicate ? [...(activePanel.activeDoctorIds || [])] : (fields.selectedIds || []) };
+    const defaultDeptOrder = departments.map(d => d.id);
+    const newPanel = {
+      id: fields.name,
+      name: fields.name,
+      title: fields.title,
+      activeDoctorIds: fields.duplicate ? [...(activePanel.activeDoctorIds || [])] : (fields.selectedIds || []),
+      // ✅ duplicate করলে active panel-এর order copy হবে
+      departmentOrder: fields.duplicate
+        ? [...(activePanel.departmentOrder || defaultDeptOrder)]
+        : defaultDeptOrder,
+    };
     await savePanelToFirebase(newPanel);
     setPanels([...panels, newPanel]);
     setActivePanelId(newPanel.id);
     setCheckedIds(new Set(newPanel.activeDoctorIds));
     setPanelModal(null);
   };
+
   const handleRenamePanel = (fields) => {
     const panelId = panelModal.panel.id;
     const updated = panels.map(p => p.id === panelId ? { ...p, name: fields.name } : p);
@@ -1474,62 +1713,67 @@ export default function DoctorPanelBuilder() {
 
   if (!getIsAuthorized()) return <NotFoundPage />;
 
+  const isDirectBookingView = !!bookingDoctorId;
+
   return (
     <div className="dpb">
       <style>{CSS}</style>
-      <div className="topbar no-print">
-        <div className="topbar-title"><Stethoscope size={20} /><span>ডাক্তার প্যানেল</span></div>
-        <div className="topbar-right">
-          <div className="tabs">
-            <button className={activeView === 'booking' ? 'tab booking-tab active' : 'tab booking-tab'} onClick={() => setActiveView('booking')}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                <line x1="16" y1="2" x2="16" y2="6"/>
-                <line x1="8" y1="2" x2="8" y2="6"/>
-                <line x1="3" y1="10" x2="21" y2="10"/>
-                <path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/>
-                <path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/>
-              </svg>
-              সিরিয়াল নিশ্চিত করুন
-            </button>
 
-            <button className={activeView === 'preview' ? 'tab active' : 'tab'} onClick={() => setActiveView('preview')}>
-              আজকের ডাক্তার সময়সূচি
-            </button>
+      {!isDirectBookingView && (
+        <div className="topbar no-print">
+          <div className="topbar-title"><Stethoscope size={20} /><span>ডাক্তার প্যানেল</span></div>
+          <div className="topbar-right">
+            <div className="tabs">
+              <button className={activeView === 'booking' ? 'tab booking-tab active' : 'tab booking-tab'} onClick={() => setActiveView('booking')}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                  <line x1="16" y1="2" x2="16" y2="6"/>
+                  <line x1="8" y1="2" x2="8" y2="6"/>
+                  <line x1="3" y1="10" x2="21" y2="10"/>
+                  <path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/>
+                  <path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/>
+                </svg>
+                সিরিয়াল নিশ্চিত করুন
+              </button>
 
-            {!isGuest && (isEditor || isModerator || isSubAdmin || isAdmin) && (
-              <button className={activeView === 'edit' ? 'tab active' : 'tab'} onClick={() => setActiveView('edit')}>
-                প্যানেল বিল্ডার
+              <button className={activeView === 'preview' ? 'tab active' : 'tab'} onClick={() => setActiveView('preview')}>
+                আজকের ডাক্তার সময়সূচি
               </button>
-            )}
-            {!isGuest && (isSubAdmin || isAdmin) && (
-              <button className={activeView === 'doctors' ? 'tab active' : 'tab'} onClick={() => setActiveView('doctors')}>
-                ডাক্তার লিস্ট
-              </button>
-            )}
-            {!isGuest && (isEditor || isModerator || isSubAdmin || isAdmin) && (
-              <button className={activeView === 'dashboard' ? 'tab active' : 'tab'} onClick={() => setActiveView('dashboard')}>
-                ড্যাশবোর্ড
-              </button>
-            )}
-            {isAdmin && (
-              <button className={activeView === 'admin' ? 'tab active' : 'tab'} onClick={() => setActiveView('admin')}>
-                অ্যাডমিন প্যানেল
+
+              {!isGuest && (isEditor || isModerator || isSubAdmin || isAdmin) && (
+                <button className={activeView === 'edit' ? 'tab active' : 'tab'} onClick={() => setActiveView('edit')}>
+                  প্যানেল বিল্ডার
+                </button>
+              )}
+              {!isGuest && (isSubAdmin || isAdmin) && (
+                <button className={activeView === 'doctors' ? 'tab active' : 'tab'} onClick={() => setActiveView('doctors')}>
+                  ডাক্তার লিস্ট
+                </button>
+              )}
+              {!isGuest && (isEditor || isModerator || isSubAdmin || isAdmin) && (
+                <button className={activeView === 'dashboard' ? 'tab active' : 'tab'} onClick={() => setActiveView('dashboard')}>
+                  ড্যাশবোর্ড
+                </button>
+              )}
+              {isAdmin && (
+                <button className={activeView === 'admin' ? 'tab active' : 'tab'} onClick={() => setActiveView('admin')}>
+                  অ্যাডমিন প্যানেল
+                </button>
+              )}
+            </div>
+
+            <NotificationBell user={user} />
+
+            {!isGuest && (
+              <button className="logout-btn" onClick={handleLogout}>
+                <LogOut size={14} /> লগআউট
               </button>
             )}
           </div>
-
-          <NotificationBell user={user} />
-
-          {!isGuest && (
-            <button className="logout-btn" onClick={handleLogout}>
-              <LogOut size={14} /> লগআউট
-            </button>
-          )}
         </div>
-      </div>
+      )}
 
-      {(activeView === 'preview' || activeView === 'edit') && (
+      {!isDirectBookingView && (activeView === 'preview' || activeView === 'edit') && (
         <PanelSwitcher
           panels={panels}
           activePanelId={activePanelId}
