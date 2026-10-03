@@ -30,36 +30,30 @@ const COLOR_THEMES = ['#1c5fa8', '#2f9e52', '#9c3a9c', '#d1392f', '#0e8ca3', '#e
 // ==================================================
 // ✅ GA4 — Booking link builder with UTM parameters
 // ==================================================
+// ⚠️ IMPORTANT: URL must be STABLE (never changes for same doctor)
+// This ensures QR codes remain identical across regenerations.
+// DO NOT add: timestamps, random IDs, doctor names (mutable), etc.
+// ==================================================
 const BOOKING_BASE_URL = 'https://doctors.alafiyahhospital.com';
 
-/**
- * ডাক্তারের booking URL generate করে GA4 UTM tracking সহ
- * @param {string} doctorId - ডাক্তারের unique ID
- * @param {string} doctorName - ডাক্তারের নাম (utm_content এর জন্য)
- * @param {string} source - traffic source: 'qr' | 'direct' | 'web'
- * @returns {string} - পূর্ণ booking URL
- */
 const buildBookingUrl = (doctorId, doctorName = '', source = 'qr') => {
   if (!doctorId) return null;
 
   const params = new URLSearchParams();
 
   if (source === 'qr') {
-    // ✅ QR code scan থেকে আসা রোগীদের জন্য
+    // ✅ QR code scan from offline materials
+    // URL is FIXED for a doctor — never includes mutable data
     params.set('utm_source', 'qr');
     params.set('utm_medium', 'offline');
     params.set('utm_campaign', `doctor_${doctorId}`);
-    if (doctorName) {
-      params.set('utm_content', encodeURIComponent(doctorName));
-    }
+    // ❌ NO utm_content — doctor name is mutable, would break QR stability
   } else if (source === 'direct') {
-    // ✅ "সিরিয়াল নিন" button click থেকে (screen-এর ভেতরে)
+    // ✅ Direct link (button click from website)
     params.set('utm_source', 'website');
     params.set('utm_medium', 'web_button');
     params.set('utm_campaign', `doctor_${doctorId}`);
-    if (doctorName) {
-      params.set('utm_content', encodeURIComponent(doctorName));
-    }
+    // ❌ NO utm_content
   }
 
   const queryString = params.toString();
