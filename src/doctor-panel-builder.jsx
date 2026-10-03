@@ -10,7 +10,7 @@ import {
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import QRCode from 'qrcode';
-import { db, doc, getDoc, setDoc, getDocs, collection, deleteDoc, updateDoc, query, where, writeBatch } from './firebase';
+import { db, doc, getDoc, setDoc, getDocs, collection, deleteDoc, updateDoc, query, where, writeBatch, trackEvent } from './firebase';
 import BookingSystem from './BookingSystem';
 import AdminDashboard from './components/AdminDashboard';
 import NotificationBell from './components/NotificationBell';
@@ -28,7 +28,46 @@ const ICON_KEYS = Object.keys(ICONS);
 const COLOR_THEMES = ['#1c5fa8', '#2f9e52', '#9c3a9c', '#d1392f', '#0e8ca3', '#e0653a', '#2b3f8f', '#159a72', '#8a6a2e', '#7a2d5c', '#4438ab', '#475569'];
 
 // ==================================================
-// ✅ html2canvas ignore helper — PDF/PNG-তে button skip
+// ✅ GA4 — Booking link builder with UTM parameters
+// ==================================================
+const BOOKING_BASE_URL = 'https://doctors.alafiyahhospital.com';
+
+/**
+ * ডাক্তারের booking URL generate করে GA4 UTM tracking সহ
+ * @param {string} doctorId - ডাক্তারের unique ID
+ * @param {string} doctorName - ডাক্তারের নাম (utm_content এর জন্য)
+ * @param {string} source - traffic source: 'qr' | 'direct' | 'web'
+ * @returns {string} - পূর্ণ booking URL
+ */
+const buildBookingUrl = (doctorId, doctorName = '', source = 'qr') => {
+  if (!doctorId) return null;
+
+  const params = new URLSearchParams();
+
+  if (source === 'qr') {
+    // ✅ QR code scan থেকে আসা রোগীদের জন্য
+    params.set('utm_source', 'qr');
+    params.set('utm_medium', 'offline');
+    params.set('utm_campaign', `doctor_${doctorId}`);
+    if (doctorName) {
+      params.set('utm_content', encodeURIComponent(doctorName));
+    }
+  } else if (source === 'direct') {
+    // ✅ "সিরিয়াল নিন" button click থেকে (screen-এর ভেতরে)
+    params.set('utm_source', 'website');
+    params.set('utm_medium', 'web_button');
+    params.set('utm_campaign', `doctor_${doctorId}`);
+    if (doctorName) {
+      params.set('utm_content', encodeURIComponent(doctorName));
+    }
+  }
+
+  const queryString = params.toString();
+  return `${BOOKING_BASE_URL}/booking/${doctorId}${queryString ? `?${queryString}` : ''}`;
+};
+
+// ==================================================
+// ✅ html2canvas ignore helper
 // ==================================================
 const html2canvasIgnoreElements = (el) => {
   if (!el || !el.classList) return false;
@@ -40,12 +79,10 @@ const html2canvasIgnoreElements = (el) => {
 
 // ==================================================
 // ✅ Per-day department ordering helper
-// panel.departmentOrder = array of department IDs
 // ==================================================
 const getOrderedDepartments = (departments, panelDepartmentOrder) => {
   if (!departments || departments.length === 0) return [];
 
-  // panel-এ departmentOrder না থাকলে fallback: global order
   if (!panelDepartmentOrder || panelDepartmentOrder.length === 0) {
     return [...departments].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   }
@@ -314,7 +351,6 @@ const CSS = `
   outline-offset: 2px;
 }
 
-/* ✅ Mobile responsive */
 @media (max-width: 480px) {
   .dpb .serial-booking-button {
     width: 100%;
@@ -407,7 +443,6 @@ const CSS = `
   .dpb .panel-section { padding: 12px; }
 }
 
-/* ✅ PRINT — সিরিয়াল নিন button hide */
 @media print {
   .no-print { display: none !important; }
   .serial-booking-button { display: none !important; }
@@ -419,7 +454,6 @@ const CSS = `
 }
 @page { margin: 10mm; }
 
-/* ✅ PDF/PNG generate-এর সময় button hide (fallback) */
 body.generating-poster .dpb .serial-booking-button {
   display: none !important;
 }
@@ -477,13 +511,19 @@ function AdminPanel({ users, onApprove, onSetRole, onDeleteUser }) {
 }
 
 // ==================================================
-// ✅ Doctor Link Modal — with image
+// ✅ Doctor Link Modal — with UTM-tagged QR
 // ==================================================
 function DoctorLinkModal({ doctor, onClose }) {
   const [copied, setCopied] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState('');
-  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://doctors.alafiyahhospital.com';
-  const linkUrl = `${baseUrl}/booking/${doctor.id}`;
+  const [linkMode, setLinkMode] = useState('qr'); // 'qr' | 'direct'
+
+  // ✅ Mode অনুযায়ী URL তৈরি
+  const linkUrl = buildBookingUrl(
+    doctor.id,
+    doctor.nameEn || doctor.name || '',
+    linkMode === 'qr' ? 'qr' : 'direct'
+  );
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
@@ -492,6 +532,7 @@ function DoctorLinkModal({ doctor, onClose }) {
   }, [onClose]);
 
   useEffect(() => {
+    if (!linkUrl) return;
     QRCode.toDataURL(linkUrl, {
       width: 300,
       margin: 2,
@@ -521,7 +562,7 @@ function DoctorLinkModal({ doctor, onClose }) {
   const handleDownloadQR = () => {
     if (!qrDataUrl) return;
     const link = document.createElement('a');
-    link.download = `qr-${doctor.nameEn || doctor.name || 'doctor'}.png`;
+    link.download = `qr-${doctor.nameEn || doctor.name || 'doctor'}-${linkMode}.png`;
     link.href = qrDataUrl;
     link.click();
   };
@@ -560,8 +601,48 @@ function DoctorLinkModal({ doctor, onClose }) {
             )}
           </div>
 
+          {/* ✅ Mode Switcher — QR vs Direct Link */}
+          <div style={{ display: 'flex', gap: '6px', background: '#f1f5f9', padding: '4px', borderRadius: '10px', marginBottom: '14px' }}>
+            <button
+              type="button"
+              onClick={() => setLinkMode('qr')}
+              style={{
+                flex: 1,
+                padding: '8px 12px',
+                border: 'none',
+                borderRadius: '8px',
+                background: linkMode === 'qr' ? '#1c5fa8' : 'transparent',
+                color: linkMode === 'qr' ? '#fff' : '#475569',
+                fontSize: '13px',
+                fontWeight: '700',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+            >
+              📱 QR Code (Offline)
+            </button>
+            <button
+              type="button"
+              onClick={() => setLinkMode('direct')}
+              style={{
+                flex: 1,
+                padding: '8px 12px',
+                border: 'none',
+                borderRadius: '8px',
+                background: linkMode === 'direct' ? '#1c5fa8' : 'transparent',
+                color: linkMode === 'direct' ? '#fff' : '#475569',
+                fontSize: '13px',
+                fontWeight: '700',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+            >
+              🔗 Direct Link (Online)
+            </button>
+          </div>
+
           <label style={{ display: 'block', fontSize: '12.5px', fontWeight: '600', color: '#475569', marginBottom: '6px' }}>
-            📎 বুকিং লিংক
+            📎 বুকিং লিংক {linkMode === 'qr' ? '(QR Scan-এর জন্য)' : '(Direct Share-এর জন্য)'}
           </label>
           <div className="link-modal-input">
             <input type="text" readOnly value={linkUrl} onClick={(e) => e.target.select()} />
@@ -570,11 +651,21 @@ function DoctorLinkModal({ doctor, onClose }) {
             </button>
           </div>
 
-          <p style={{ fontSize: '11.5px', color: '#94a3b8', marginTop: '8px', lineHeight: '1.5' }}>
-            💡 এই লিংক শেয়ার করলে রোগী সরাসরি এই ডাক্তারের বুকিং ফর্মে যাবে।
-          </p>
+          <div style={{ fontSize: '11.5px', color: '#64748b', marginTop: '10px', lineHeight: '1.6', background: '#f0fdfa', padding: '10px 12px', borderRadius: '8px', border: '1px solid #99f6e4' }}>
+            {linkMode === 'qr' ? (
+              <>
+                <strong style={{ color: '#0f766e' }}>📱 QR Code Mode:</strong> এই লিংকটি QR code-এ embed করা হবে।
+                রোগী QR scan করলে GA4-তে <code style={{ background: '#ccfbf1', padding: '1px 5px', borderRadius: '3px' }}>qr / offline</code> source হিসেবে track হবে।
+              </>
+            ) : (
+              <>
+                <strong style={{ color: '#0f766e' }}>🔗 Direct Link Mode:</strong> এই লিংক Facebook/WhatsApp-এ share করুন।
+                GA4-তে <code style={{ background: '#ccfbf1', padding: '1px 5px', borderRadius: '3px' }}>website / web_button</code> source হিসেবে track হবে।
+              </>
+            )}
+          </div>
 
-          {qrDataUrl && (
+          {qrDataUrl && linkMode === 'qr' && (
             <div className="qr-container">
               <div style={{ fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '10px' }}>
                 📱 QR কোড (স্ক্যান করে বুক করুন)
@@ -687,9 +778,6 @@ function DepartmentModal({ initial, onSave, onClose }) {
   );
 }
 
-// ==================================================
-// ✅ DoctorModal — with Vercel Blob image upload
-// ==================================================
 function DoctorModal({ initial, onSave, onClose }) {
   const [name, setName] = useState(initial ? initial.name : '');
   const [nameEn, setNameEn] = useState(initial ? initial.nameEn || '' : '');
@@ -1012,12 +1100,8 @@ function PanelSwitcher({ panels, activePanelId, onSwitch, onAdd, onRename, onDel
   );
 }
 
-// ==================================================
-// ✅ EditPanel — with per-day department ordering
-// ==================================================
 function EditPanel({ panel, departments, footer, checkedIds, allChecked, onUpdateTitle, onUpdateFooter, onUpdatePhone, onAddPhone, onRemovePhone, onAddDept, onEditDept, onDeleteDept, onMoveDept, onAddDoctor, onEditDoctor, onDeleteDoctor, onMoveDoctor, onToggleDoctorChecked, onToggleDeptAllChecked, onToggleAll, clearConfirm, onClearAll, onGoPreview, onShowDoctorLink }) {
 
-  // ✅ panel-এর departmentOrder অনুযায়ী departments সাজান
   const orderedDepartments = getOrderedDepartments(departments, panel?.departmentOrder);
 
   return (
@@ -1066,12 +1150,14 @@ function EditPanel({ panel, departments, footer, checkedIds, allChecked, onUpdat
 function DeptHeader({ dept }) { const Icon = ICONS[dept.icon] || ICONS.Stethoscope; return (<div className="dept-header-wrap"><span className="dept-icon-box" style={{ borderColor: dept.color }}><Icon size={19} color={dept.color} /></span><div className="dept-ribbon" style={{ background: dept.color }}><span>{dept.name}</span></div></div>); }
 
 // ==================================================
-// ✅ DoctorEntry — with "সিরিয়াল নিন" button
+// ✅ DoctorEntry — with UTM-tagged booking button
 // ==================================================
 function DoctorEntry({ doc, accentColor }) {
   const hasValidId = doc.id && typeof doc.id === 'string' && doc.id.trim() !== '';
+
+  // ✅ screen-এর ভেতরে click থেকে আসা রোগী (utm_source=website)
   const bookingUrl = hasValidId
-    ? `https://doctors.alafiyahhospital.com/booking/${doc.id}`
+    ? buildBookingUrl(doc.id, doc.nameEn || doc.name || '', 'direct')
     : null;
 
   return (
@@ -1098,6 +1184,14 @@ function DoctorEntry({ doc, accentColor }) {
           rel="noopener noreferrer"
           className="serial-booking-button"
           aria-label={`${doc.name} এর সিরিয়াল নিন`}
+          onClick={() => {
+            trackEvent('booking_button_click', {
+              doctor_id: doc.id,
+              doctor_name: doc.name,
+              department: doc.deptName || 'unknown',
+              source: 'website_button',
+            });
+          }}
         >
           সিরিয়াল নিন
         </a>
@@ -1106,9 +1200,6 @@ function DoctorEntry({ doc, accentColor }) {
   );
 }
 
-// ==================================================
-// ✅ PreviewPanel — with per-day department ordering
-// ==================================================
 function PreviewPanel({ panel, departments, checkedIds, footer, onBack, user }) {
   const printRef = useRef(null);
   const isAdmin = user?.role === 'admin';
@@ -1186,7 +1277,6 @@ function PreviewPanel({ panel, departments, checkedIds, footer, onBack, user }) 
 
   const hasChecked = checkedIds && checkedIds.size > 0;
 
-  // ✅ panel-এর departmentOrder অনুযায়ী departments সাজান
   const orderedDepartments = getOrderedDepartments(departments, panel?.departmentOrder);
 
   const visibleDepartments = orderedDepartments.map((dept) => ({
@@ -1337,10 +1427,8 @@ export default function DoctorPanelBuilder() {
           return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
         });
 
-        // ✅ Migration: departmentOrder না থাকলে default দিয়ে initialize
         const defaultDeptOrder = depts.map(d => d.id);
 
-        // যেসব panel-এ departmentOrder নেই, সেগুলোতে যোগ করে Firestore-এ save
         const panelsNeedingMigration = panelList.filter(
           p => !p.departmentOrder || p.departmentOrder.length === 0
         );
@@ -1502,15 +1590,11 @@ export default function DoctorPanelBuilder() {
   const handleAddDept = () => setDeptModal({ mode: 'add' });
   const handleEditDept = (dept) => setDeptModal({ mode: 'edit', dept });
 
-  // ==================================================
-  // ✅ handleSaveDept — নতুন dept হলে সব panel-এর order-এ যোগ
-  // ==================================================
   const handleSaveDept = (fields) => {
     if (deptModal.mode === 'add') {
       const newDept = makeDepartment(fields);
       updateDepartments(d => [...d, newDept], true);
 
-      // ✅ সব panel-এর departmentOrder-এর শেষে নতুন dept ID যোগ করুন
       const newPanels = panels.map(p => ({
         ...p,
         departmentOrder: [...(p.departmentOrder || []), newDept.id],
@@ -1524,14 +1608,10 @@ export default function DoctorPanelBuilder() {
     setDeptModal(null);
   };
 
-  // ==================================================
-  // ✅ handleDeleteDept — সব panel থেকে dept ID remove
-  // ==================================================
   const handleDeleteDept = (deptId) => {
     const removedIds = departments.find(d => d.id === deptId)?.doctors?.map(doc => doc.id) || [];
     updateDepartments(d => d.filter(dept => dept.id !== deptId), true);
 
-    // ✅ সব panel থেকে dept ID remove করুন (activeDoctorIds + departmentOrder)
     const newPanels = panels.map(p => ({
       ...p,
       activeDoctorIds: (p.activeDoctorIds || []).filter(id => !removedIds.includes(id)),
@@ -1541,11 +1621,7 @@ export default function DoctorPanelBuilder() {
     newPanels.forEach(p => savePanelToFirebase(p));
   };
 
-  // ==================================================
-  // ✅ handleMoveDept — শুধু active panel-এর order বদলান
-  // ==================================================
   const handleMoveDept = (deptId, dir) => {
-    // active panel-এর বর্তমান departmentOrder (না থাকলে global order)
     const currentOrder = (activePanel.departmentOrder && activePanel.departmentOrder.length > 0)
       ? [...activePanel.departmentOrder]
       : departments.map(d => d.id);
@@ -1555,10 +1631,8 @@ export default function DoctorPanelBuilder() {
     const ni = idx + dir;
     if (ni < 0 || ni >= currentOrder.length) return;
 
-    // Swap
     [currentOrder[idx], currentOrder[ni]] = [currentOrder[ni], currentOrder[idx]];
 
-    // ✅ শুধু এই panel-এ save (departments-এর global order অপরিবর্তিত)
     updatePanel(p => ({ ...p, departmentOrder: currentOrder }), true);
   };
 
@@ -1637,9 +1711,6 @@ export default function DoctorPanelBuilder() {
     if (panel) { setActivePanelId(panelId); setCheckedIds(new Set(panel.activeDoctorIds || [])); }
   };
 
-  // ==================================================
-  // ✅ handleAddPanel — নতুন panel-এ default departmentOrder
-  // ==================================================
   const handleAddPanel = async (fields) => {
     const defaultDeptOrder = departments.map(d => d.id);
     const newPanel = {
@@ -1647,7 +1718,6 @@ export default function DoctorPanelBuilder() {
       name: fields.name,
       title: fields.title,
       activeDoctorIds: fields.duplicate ? [...(activePanel.activeDoctorIds || [])] : (fields.selectedIds || []),
-      // ✅ duplicate করলে active panel-এর order copy হবে
       departmentOrder: fields.duplicate
         ? [...(activePanel.departmentOrder || defaultDeptOrder)]
         : defaultDeptOrder,

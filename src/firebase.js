@@ -42,6 +42,7 @@ import {
   deleteObject,
   listAll,
 } from 'firebase/storage';
+import { getAnalytics, logEvent, isSupported } from 'firebase/analytics';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyAhAGpQ4ACx-EDePKTxqjKXoS_qN2UoC2M',
@@ -63,6 +64,50 @@ const auth = getAuth(app);
 setPersistence(auth, browserSessionPersistence).catch((error) =>
   console.error('Auth persistence error:', error)
 );
+
+// ==================================================
+// ✅ Google Analytics 4 (GA4)
+// ==================================================
+// GA4 শুধু browser-এ কাজ করে, SSR/Node-এ নয়
+let analytics = null;
+
+if (typeof window !== 'undefined') {
+  isSupported()
+    .then((supported) => {
+      if (supported) {
+        analytics = getAnalytics(app);
+        console.log('✅ GA4 Analytics initialized');
+      } else {
+        console.warn('⚠️ GA4 not supported in this environment');
+      }
+    })
+    .catch((err) => {
+      console.error('❌ GA4 initialization error:', err);
+    });
+}
+
+export { analytics };
+
+// ==================================================
+// ✅ Analytics Helper — নিরাপদ event tracking
+// ==================================================
+/**
+ * GA4-তে কাস্টম ইভেন্ট পাঠান (safe wrapper)
+ * @param {string} eventName - GA4-এর allowed event name (snake_case)
+ * @param {object} params - event parameters
+ */
+export const trackEvent = (eventName, params = {}) => {
+  if (!analytics) {
+    console.warn(`⚠️ Analytics not ready — skipped event: ${eventName}`);
+    return;
+  }
+  try {
+    logEvent(analytics, eventName, params);
+    console.log(`📊 GA4 event: ${eventName}`, params);
+  } catch (err) {
+    console.error(`❌ GA4 logEvent error [${eventName}]:`, err);
+  }
+};
 
 // ==================================================
 // ✅ Exports — Auth
@@ -113,3 +158,8 @@ export {
   deleteObject,
   listAll,
 };
+
+// ==================================================
+// ✅ Exports — Analytics
+// ==================================================
+export { logEvent, isSupported };

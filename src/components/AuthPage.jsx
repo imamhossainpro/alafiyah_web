@@ -7,6 +7,7 @@ import {
   updateProfile 
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { trackEvent } from '../firebase';   // ✅ GA4
 
 const DEFAULT_HOSPITAL_ID = 'alafiyah_main';
 
@@ -39,6 +40,10 @@ export default function AuthPage({ onClose }) {
             createdAt: new Date().toISOString(),
           });
         }
+
+        // ✅ GA4 — login event
+        trackEvent('login', { method: 'email' });
+
         onClose && onClose();
       } else {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
@@ -54,6 +59,10 @@ export default function AuthPage({ onClose }) {
           createdAt: new Date().toISOString(),
           uid: user.uid,
         });
+
+        // ✅ GA4 — sign_up event
+        trackEvent('sign_up', { method: 'email' });
+
         onClose && onClose();
       }
     } catch (err) {
@@ -64,7 +73,7 @@ export default function AuthPage({ onClose }) {
     }
   };
 
-  // ইনলাইন স্টাইল (Tailwind ছাড়া)
+  // ইনলাইন স্টাইল (Tailwind ছাড়া)
   const overlayStyle = {
     position: 'fixed',
     top: 0, left: 0, right: 0, bottom: 0,

@@ -3,6 +3,7 @@ import { lazy, Suspense } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { HospitalProvider } from './context/HospitalContext';
+import AnalyticsTracker from './components/AnalyticsTracker';   // ✅ GA4 tracker
 
 // Lazy load components
 const DoctorPanelBuilder = lazy(() => import('./doctor-panel-builder'));
@@ -29,6 +30,9 @@ function App() {
   return (
     <AuthProvider>
       <HospitalProvider>
+        {/* ✅ GA4 page_view tracking — route change হলে auto track করবে */}
+        <AnalyticsTracker />
+
         <Suspense fallback={<Loader />}>
           <Routes>
             <Route path="/" element={<DoctorPanelBuilder />} />
