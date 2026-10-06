@@ -31,3 +31,8 @@ auth_info_baileys/
 .env*
 .env.local
 .env
+
+# Environment variables
+.env
+.env.local
+.env.*.local

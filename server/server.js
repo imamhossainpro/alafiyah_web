@@ -2,12 +2,15 @@
 // ==================================================
 // 🏥 আল-আফিয়া হাসপাতাল — Backend Server
 // ==================================================
-// ✅ WhatsApp via Baileys (v6.7.9)
+// ✅ WhatsApp via Baileys (Railway Volume persistent session)
 // ✅ SMS via sms.net.bd (English only)
 // ✅ Email via Gmail
 // ✅ FCM Push Notifications
 // ✅ Uses nameEn / doctorNameEn (no transliteration)
 // ✅ Service account from env variable OR file
+// ✅ Invalid FCM token auto-cleanup
+// ✅ QR code HTTP endpoint for easy WhatsApp linking
+// ✅ Reduced logging to stay under Railway rate limit
 // ==================================================
 require('dotenv').config();
 const express = require('express');
@@ -18,9 +21,10 @@ const {
   fetchLatestBaileysVersion,
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
-const qrcode = require('qrcode-terminal');
 const nodemailer = require('nodemailer');
 const axios = require('axios');
+const path = require('path');
+const fs = require('fs');
 
 // ---------- Firebase Admin ----------
 const { initializeApp, cert } = require('firebase-admin/app');
@@ -33,7 +37,6 @@ const { getMessaging } = require('firebase-admin/messaging');
 let serviceAccount;
 
 try {
-  // Option 1: Load from environment variable (base64 encoded) — for production
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
     const decoded = Buffer.from(
       process.env.FIREBASE_SERVICE_ACCOUNT,
@@ -42,7 +45,6 @@ try {
     serviceAccount = JSON.parse(decoded);
     console.log('✅ serviceAccount loaded from env variable');
   } else {
-    // Option 2: Load from file — for local development
     serviceAccount = require('./serviceAccountKey.json');
     console.log('✅ serviceAccountKey.json loaded');
   }
@@ -95,7 +97,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json());
+app.use(express.json({ limit: '5mb' }));
 
 // ---------- কনস্ট্যান্ট ----------
 const HOSPITAL_ID = 'alafiyah_main';
@@ -105,6 +107,39 @@ let sock = null;
 let isConnected = false;
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 5;
+
+// ✅ Store latest QR code for HTTP endpoint
+let latestQR = null;
+let qrGeneratedAt = null;
+
+// ==================================================
+// ✅ WhatsApp auth directory — Railway volume aware
+// ==================================================
+const getAuthDir = () => {
+  const volumeMountPath = process.env.RAILWAY_VOLUME_MOUNT_PATH;
+
+  if (volumeMountPath) {
+    const dir = path.join(volumeMountPath, 'auth_info_baileys');
+    console.log(`📁 Using Railway volume path: ${dir}`);
+    return dir;
+  }
+
+  const localDir = path.join(__dirname, 'auth_info_baileys');
+  console.log(`📁 Using local path: ${localDir}`);
+  return localDir;
+};
+
+const AUTH_DIR = getAuthDir();
+
+// Ensure directory exists
+try {
+  if (!fs.existsSync(AUTH_DIR)) {
+    fs.mkdirSync(AUTH_DIR, { recursive: true });
+    console.log(`✅ Created auth directory: ${AUTH_DIR}`);
+  }
+} catch (err) {
+  console.error(`❌ Failed to create auth directory: ${err.message}`);
+}
 
 // ---------- ইমেইল ট্রান্সপোর্টার ----------
 const transporter = nodemailer.createTransport({
@@ -157,7 +192,6 @@ async function saveInAppNotification(userId, notification, data = {}) {
       expiresAt: expiresAt.toISOString(),
     });
 
-    console.log(`✅ In-app notification saved: ${docRef.id}`);
     return docRef.id;
   } catch (error) {
     console.error('❌ saveInAppNotification error:', error.message);
@@ -166,11 +200,28 @@ async function saveInAppNotification(userId, notification, data = {}) {
 }
 
 // ==================================================
+// ✅ Get FCM tokens from user doc (normalized)
+// ==================================================
+function extractFcmTokens(userData) {
+  let tokens = [];
+
+  if (Array.isArray(userData.fcmTokens)) {
+    tokens = userData.fcmTokens.map((t) =>
+      typeof t === 'string' ? t : t.token
+    );
+  } else if (userData.fcmToken) {
+    tokens = [userData.fcmToken];
+  }
+
+  // Dedupe + filter falsy
+  return [...new Set(tokens.filter(Boolean))];
+}
+
+// ==================================================
 // ✅ FCM Push Notification
 // ==================================================
 async function sendToDevice(fcmToken, notification, data = {}) {
   if (!fcmToken) {
-    console.warn('⚠️ No FCM token provided');
     return { success: false, error: 'No token' };
   }
 
@@ -210,7 +261,13 @@ async function sendToDevice(fcmToken, notification, data = {}) {
     console.log(`✅ FCM sent: ${response}`);
     return { success: true, messageId: response };
   } catch (error) {
-    console.error('❌ FCM send error:', error.message);
+    // Only log actual errors (not token issues)
+    if (
+      error.code !== 'messaging/invalid-registration-token' &&
+      error.code !== 'messaging/registration-token-not-registered'
+    ) {
+      console.error('❌ FCM send error:', error.message);
+    }
 
     if (
       error.code === 'messaging/invalid-registration-token' ||
@@ -220,6 +277,47 @@ async function sendToDevice(fcmToken, notification, data = {}) {
     }
 
     return { success: false, error: error.message };
+  }
+}
+
+// ==================================================
+// ✅ FCM Token Cleanup
+// ==================================================
+async function cleanupInvalidToken(hospitalId, userId, invalidToken) {
+  try {
+    const userRef = db
+      .collection('hospitals')
+      .doc(hospitalId)
+      .collection('users')
+      .doc(userId);
+
+    const userDoc = await userRef.get();
+    if (!userDoc.exists) return;
+
+    const userData = userDoc.data();
+    let tokens = [];
+
+    if (Array.isArray(userData.fcmTokens)) {
+      tokens = userData.fcmTokens;
+    } else if (userData.fcmToken) {
+      tokens = [userData.fcmToken];
+    }
+
+    const cleanedTokens = tokens.filter((t) => {
+      const tokenStr = typeof t === 'string' ? t : t?.token;
+      return tokenStr !== invalidToken;
+    });
+
+    if (cleanedTokens.length === tokens.length) return;
+
+    await userRef.update({
+      fcmTokens: cleanedTokens,
+      lastTokenCleanup: new Date().toISOString(),
+    });
+
+    console.log(`🧹 Cleaned invalid token for user ${userId}`);
+  } catch (err) {
+    // silent
   }
 }
 
@@ -241,8 +339,6 @@ async function sendSMS(phoneNumber, message) {
       number = '88' + number;
     }
 
-    console.log(`📤 Sending SMS to: ${number}`);
-
     const formData = new URLSearchParams();
     formData.append('api_key', apiKey);
     formData.append('to', number);
@@ -260,31 +356,25 @@ async function sendSMS(phoneNumber, message) {
       }
     );
 
-    console.log(`📥 sms.net.bd response:`, JSON.stringify(response.data, null, 2));
-
     if (response.data && response.data.error === 0) {
-      console.log(`📱 SMS sent successfully: ${response.data.msg}`);
+      console.log(`📱 SMS sent to ${number}`);
       return true;
     } else {
-      const errorMsg = response.data?.msg || 'Unknown error';
-      console.error(`❌ SMS send failed: ${errorMsg}`);
+      console.error(`❌ SMS failed: ${response.data?.msg || 'Unknown'}`);
       return false;
     }
   } catch (error) {
     console.error('❌ SMS API error:', error.message);
-    if (error.response) {
-      console.error('   Response:', error.response.data);
-    }
     return false;
   }
 }
 
 // ==================================================
-// ✅ WhatsApp কানেকশন
+// ✅ WhatsApp কানেকশন (Railway volume persistent)
 // ==================================================
 async function connectToWhatsApp() {
   try {
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+    const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
     const { version } = await fetchLatestBaileysVersion();
 
     sock = makeWASocket({
@@ -293,6 +383,11 @@ async function connectToWhatsApp() {
       logger: pino({ level: 'silent' }),
       connectTimeoutMs: 60000,
       keepAliveIntervalMs: 10000,
+      // ✅ Reduce network traffic and logging
+      syncFullHistory: false,
+      markOnlineOnConnect: false,
+      shouldSyncHistoryMessage: () => false,
+      generateHighQualityLinkPreview: false,
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -301,12 +396,20 @@ async function connectToWhatsApp() {
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
+        // ✅ Store QR for HTTP endpoint
+        latestQR = qr;
+        qrGeneratedAt = new Date().toISOString();
+
+        const publicUrl =
+          process.env.RAILWAY_PUBLIC_DOMAIN
+            ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}/qr`
+            : `http://localhost:${PORT}/qr`;
+
         console.log('\n====================');
-        console.log('📱 WhatsApp QR Scan করুন:');
-        console.log('👉 Settings → Linked Devices → Link a Device');
+        console.log('📱 WhatsApp QR Code ready!');
+        console.log(`🌐 Open in browser: ${publicUrl}`);
+        console.log('👉 Scan with: Settings → Linked Devices → Link a Device');
         console.log('====================\n');
-        qrcode.generate(qr, { small: true });
-        console.log('\n====================\n');
       }
 
       if (connection === 'close') {
@@ -314,41 +417,133 @@ async function connectToWhatsApp() {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
-        console.log(`\n🔌 Connection closed | statusCode: ${statusCode} | reconnect: ${shouldReconnect}`);
+        console.log(`🔌 Closed | statusCode: ${statusCode} | reconnect: ${shouldReconnect}`);
 
         if (shouldReconnect) {
           reconnectAttempts++;
           if (reconnectAttempts <= MAX_RECONNECT_ATTEMPTS) {
             const delay = Math.min(3000 * reconnectAttempts, 15000);
-            console.log(`🔄 Reconnecting in ${delay / 1000}s (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
             setTimeout(() => connectToWhatsApp(), delay);
           } else {
             console.error(`❌ Failed after ${MAX_RECONNECT_ATTEMPTS} attempts!`);
           }
         } else {
           console.log('\n❌ WhatsApp logged out!');
-          console.log('👉 Delete auth_info_baileys folder and restart');
+          console.log('👉 Delete auth folder and restart to scan new QR');
+          console.log('👉 Or visit /qr endpoint after restart');
         }
       } else if (connection === 'open') {
         isConnected = true;
         reconnectAttempts = 0;
-        console.log('\n✅ WhatsApp connected!');
-        console.log(`📞 Hospital WhatsApp: ${HOSPITAL_WHATSAPP}\n`);
+        latestQR = null; // Clear QR once connected
+        qrGeneratedAt = null;
+        console.log('✅ WhatsApp connected!');
       }
     });
   } catch (error) {
     console.error('❌ connectToWhatsApp error:', error.message);
-    console.log('🔄 Retrying in 5s...');
     setTimeout(() => connectToWhatsApp(), 5000);
   }
 }
+
+// ==================================================
+// 🌐 QR Code HTTP Endpoint — for easy WhatsApp linking
+// ==================================================
+app.get('/qr', (req, res) => {
+  if (isConnected) {
+    return res.send(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>WhatsApp Status</title>
+          <meta charset="UTF-8">
+        </head>
+        <body style="display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#f0f4f8;font-family:sans-serif;">
+          <div style="text-align:center;background:#fff;padding:40px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,0.1);">
+            <div style="font-size:64px;margin-bottom:20px;">✅</div>
+            <h1 style="color:#16a34a;margin:0 0 10px 0;">WhatsApp Connected</h1>
+            <p style="color:#64748b;margin:0;">No QR code needed.</p>
+          </div>
+        </body>
+      </html>
+    `);
+  }
+
+  if (!latestQR) {
+    return res.send(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>WhatsApp Status</title>
+          <meta charset="UTF-8">
+          <meta http-equiv="refresh" content="5">
+        </head>
+        <body style="display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#f0f4f8;font-family:sans-serif;">
+          <div style="text-align:center;background:#fff;padding:40px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,0.1);">
+            <div style="font-size:64px;margin-bottom:20px;">⏳</div>
+            <h1 style="color:#d97706;margin:0 0 10px 0;">Waiting for QR...</h1>
+            <p style="color:#64748b;margin:0;">Page auto-refreshes every 5 seconds.</p>
+          </div>
+        </body>
+      </html>
+    `);
+  }
+
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>WhatsApp QR Code</title>
+        <meta charset="UTF-8">
+      </head>
+      <body style="display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#f0f4f8;font-family:sans-serif;padding:20px;">
+        <div style="text-align:center;background:#fff;padding:40px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,0.1);max-width:500px;">
+          <h1 style="color:#1c5fa8;margin:0 0 10px 0;font-size:24px;">📱 WhatsApp QR Code</h1>
+          <p style="color:#64748b;margin:0 0 24px 0;font-size:14px;">Scan this QR code with the Hospital WhatsApp</p>
+          <div id="qrcode" style="display:flex;justify-content:center;margin:20px 0;"></div>
+          <p style="color:#64748b;margin:20px 0 0 0;font-size:13px;">
+            <strong>Settings</strong> → <strong>Linked Devices</strong> → <strong>Link a Device</strong>
+          </p>
+          <p style="color:#94a3b8;margin:10px 0 0 0;font-size:11px;">
+            Generated: ${qrGeneratedAt || 'just now'}
+          </p>
+          <p style="margin:20px 0 0 0;">
+            <button onclick="location.reload()" style="background:#1c5fa8;color:#fff;border:none;padding:10px 24px;border-radius:8px;cursor:pointer;font-size:14px;">
+              🔄 Refresh
+            </button>
+          </p>
+        </div>
+        <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+        <script>
+          try {
+            QRCode.toCanvas(
+              document.getElementById('qrcode'),
+              '${latestQR}',
+              { width: 300, margin: 2, color: { dark: '#1c5fa8', light: '#ffffff' } },
+              function (error) {
+                if (error) {
+                  document.getElementById('qrcode').innerHTML = 
+                    '<p style="color:red;">Error rendering QR. <br>Try refreshing or use terminal QR.</p>';
+                  console.error(error);
+                }
+              }
+            );
+          } catch (e) {
+            console.error(e);
+          }
+          // Auto-refresh every 20 seconds (QR expires)
+          setTimeout(function() { location.reload(); }, 20000);
+        </script>
+      </body>
+    </html>
+  `);
+});
 
 // ==================================================
 // 🆕 TRIGGER 1: Hospital WhatsApp notification on new booking
 // ==================================================
 async function sendHospitalNotification(data, appointmentId) {
   if (!isConnected || !sock) {
-    console.log(`⚠️ WhatsApp not connected! isConnected=${isConnected}, sock=${!!sock}`);
     return;
   }
 
@@ -379,13 +574,11 @@ Referral: ${data.referralSource || '-'}
 -------------------
 Status: Pending
 Booking ID: ${appointmentId}
-Time: ${new Date().toLocaleString('en-GB', { timeZone: 'Asia/Dhaka' })}
-
-Admin confirm korle patient SMS/Email pabe.`;
+Time: ${new Date().toLocaleString('en-GB', { timeZone: 'Asia/Dhaka' })}`;
 
   try {
     await sock.sendMessage(jid, { text: msg });
-    console.log(`📨 Hospital WhatsApp notified.\n`);
+    console.log(`📨 Hospital WhatsApp notified: ${appointmentId}`);
   } catch (err) {
     console.error('❌ WhatsApp notification failed:', err.message);
   }
@@ -443,12 +636,7 @@ Booking Confirmed. Thank you.`;
     if (mobile.startsWith('0')) mobile = '88' + mobile.substring(1);
     else if (!mobile.startsWith('88')) mobile = '88' + mobile;
 
-    const smsSent = await sendSMS(mobile, smsText);
-    if (smsSent) {
-      console.log(`📱 SMS sent to ${mobile}`);
-    } else {
-      console.log(`⚠️ SMS failed for ${mobile}`);
-    }
+    await sendSMS(mobile, smsText);
   }
 
   // ---------- ২. ইমেইল ----------
@@ -460,7 +648,7 @@ Booking Confirmed. Thank you.`;
         subject: `Booking Confirmed - Serial ${serial}`,
         html: emailHtml,
       });
-      console.log(`📧 Email sent to ${data.email}`);
+      console.log(`📧 Email sent: ${appointmentId}`);
     } catch (err) {
       console.error('❌ Email error:', err.message);
     }
@@ -494,19 +682,11 @@ Booking Confirmed. Thank you.`;
 
       if (userDoc.exists) {
         const userData = userDoc.data();
-        let fcmTokens = [];
+        const fcmTokens = extractFcmTokens(userData);
 
-        if (Array.isArray(userData.fcmTokens)) {
-          fcmTokens = userData.fcmTokens.map((t) =>
-            typeof t === 'string' ? t : t.token
-          );
-        } else if (userData.fcmToken) {
-          fcmTokens = [userData.fcmToken];
-        }
-
-        if (fcmTokens.length > 0) {
-          await sendToDevice(
-            fcmTokens[0],
+        for (const token of fcmTokens) {
+          const result = await sendToDevice(
+            token,
             {
               title: 'Booking Confirmed',
               body: `Serial #${serial} · ${englishDoctorName}`,
@@ -518,10 +698,14 @@ Booking Confirmed. Thank you.`;
               clickAction: 'OPEN_APPOINTMENT',
             }
           );
+
+          if (!result.success && result.error === 'INVALID_TOKEN') {
+            await cleanupInvalidToken(HOSPITAL_ID, data.userId, token);
+          }
         }
       }
     } catch (fcmErr) {
-      console.warn('⚠️ FCM push failed:', fcmErr.message);
+      // silent
     }
   }
 }
@@ -536,8 +720,6 @@ app.post('/api/queue/next', async (req, res) => {
     if (!hospitalId || !doctorId || !date) {
       return res.status(400).json({ success: false, error: 'Missing fields' });
     }
-
-    console.log(`📢 Queue Next API: Serial #${nextSerial} for doctor ${doctorId}`);
 
     const appointmentsRef = db
       .collection('hospitals')
@@ -574,22 +756,15 @@ app.post('/api/queue/next', async (req, res) => {
     }
 
     const userData = userDoc.data();
-    let fcmTokens = [];
-
-    if (Array.isArray(userData.fcmTokens)) {
-      fcmTokens = userData.fcmTokens.map((t) =>
-        typeof t === 'string' ? t : t.token
-      );
-    } else if (userData.fcmToken) {
-      fcmTokens = [userData.fcmToken];
-    }
+    const fcmTokens = extractFcmTokens(userData);
 
     const englishDoctorName = appointment.doctorNameEn || appointment.doctorName || '';
 
     let fcmResult = { success: false, error: 'No FCM token' };
-    if (fcmTokens.length > 0) {
+
+    for (const token of fcmTokens) {
       fcmResult = await sendToDevice(
-        fcmTokens[0],
+        token,
         {
           title: 'Your serial is next!',
           body: `Please be ready at ${englishDoctorName}'s chamber. Serial #${nextSerial}`,
@@ -600,6 +775,12 @@ app.post('/api/queue/next', async (req, res) => {
           mySerial: String(nextSerial),
         }
       );
+
+      if (!fcmResult.success && fcmResult.error === 'INVALID_TOKEN') {
+        await cleanupInvalidToken(hospitalId, userId, token);
+      }
+
+      if (fcmResult.success) break;
     }
 
     await saveInAppNotification(
@@ -616,10 +797,9 @@ app.post('/api/queue/next', async (req, res) => {
       }
     );
 
-    console.log(`✅ FCM: ${fcmResult.success} | In-App: saved`);
     res.json({ success: true, result: fcmResult });
   } catch (error) {
-    console.error('❌ Queue API error:', error);
+    console.error('❌ Queue API error:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -643,10 +823,6 @@ app.post('/api/appointment/confirm-with-message', async (req, res) => {
         error: 'Missing hospitalId or appointmentId',
       });
     }
-
-    console.log(
-      `📢 Confirm API: ${appointmentId} | Serial: ${customSerial} | Time: ${customDoctorTime}`
-    );
 
     const apptRef = db
       .collection('hospitals')
@@ -676,7 +852,7 @@ app.post('/api/appointment/confirm-with-message', async (req, res) => {
     if (customNote) updates.confirmNote = customNote;
 
     await apptRef.update(updates);
-    console.log(`✅ Appointment updated: ${appointmentId}`);
+    console.log(`✅ Confirmed: ${appointmentId}`);
 
     const editedData = {
       ...data,
@@ -687,12 +863,10 @@ app.post('/api/appointment/confirm-with-message', async (req, res) => {
 
     try {
       await sendPatientConfirmation(editedData, appointmentId);
-      console.log(`✅ Patient notification sent for ${appointmentId}`);
     } catch (notifErr) {
-      console.error('⚠️ Notification send failed:', notifErr.message);
       return res.json({
         success: true,
-        message: 'Appointment confirmed but notification may have failed',
+        message: 'Confirmed but notification may have failed',
         warning: notifErr.message,
       });
     }
@@ -702,7 +876,7 @@ app.post('/api/appointment/confirm-with-message', async (req, res) => {
       message: 'Appointment confirmed and notification sent',
     });
   } catch (error) {
-    console.error('❌ Confirm API error:', error);
+    console.error('❌ Confirm API error:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -733,7 +907,7 @@ app.post('/api/notification/send-promo', async (req, res) => {
       userIds = usersSnap.docs.map((d) => d.id);
     }
 
-    console.log(`📢 Sending promo to ${userIds.length} users`);
+    console.log(`📢 Promo to ${userIds.length} users`);
 
     const results = [];
 
@@ -754,29 +928,28 @@ app.post('/api/notification/send-promo', async (req, res) => {
 
         if (userDoc.exists) {
           const userData = userDoc.data();
-          let fcmTokens = [];
-          if (Array.isArray(userData.fcmTokens)) {
-            fcmTokens = userData.fcmTokens.map((t) =>
-              typeof t === 'string' ? t : t.token
-            );
-          } else if (userData.fcmToken) {
-            fcmTokens = [userData.fcmToken];
-          }
+          const fcmTokens = extractFcmTokens(userData);
 
-          if (fcmTokens.length > 0) {
-            await sendToDevice(
-              fcmTokens[0],
+          for (const token of fcmTokens) {
+            const fcmResult = await sendToDevice(
+              token,
               { title, body },
               { type: 'PROMO', clickAction: 'OPEN_APP' }
             );
+
+            if (!fcmResult.success && fcmResult.error === 'INVALID_TOKEN') {
+              await cleanupInvalidToken(HOSPITAL_ID, userId, token);
+            }
           }
         }
       } catch (err) {
-        console.warn(`⚠️ FCM failed for user ${userId}:`, err.message);
+        // silent
       }
 
       results.push({ userId, notifId });
     }
+
+    console.log(`✅ Promo sent to ${results.length} users`);
 
     res.json({
       success: true,
@@ -784,7 +957,7 @@ app.post('/api/notification/send-promo', async (req, res) => {
       results,
     });
   } catch (error) {
-    console.error('❌ Promo API error:', error);
+    console.error('❌ Promo API error:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -797,6 +970,8 @@ app.get('/', (req, res) => {
     status: 'ok',
     hospital: HOSPITAL_ID,
     whatsapp: isConnected ? 'connected' : 'disconnected',
+    authDir: AUTH_DIR,
+    volumeAttached: !!process.env.RAILWAY_VOLUME_MOUNT_PATH,
     timestamp: new Date().toISOString(),
   });
 });
@@ -807,13 +982,11 @@ app.get('/', (req, res) => {
 const previousStatuses = new Map();
 const appointmentsPath = `hospitals/${HOSPITAL_ID}/appointments`;
 
-console.log(`\n🔍 Firestore listener starting: ${appointmentsPath}`);
-console.log(`📢 Trigger 1: New booking → Hospital WhatsApp`);
-console.log(`📢 Trigger 2: Direct Firestore confirm → SMS + Email + In-App\n`);
+console.log(`🔍 Firestore listener: ${appointmentsPath}`);
 
 db.collection(appointmentsPath).onSnapshot(
   (snapshot) => {
-    console.log(`📊 Snapshot: ${snapshot.docChanges().length} changes`);
+    // ✅ Removed global snapshot log (was flooding Railway)
 
     snapshot.docChanges().forEach(async (change) => {
       const docId = change.doc.id;
@@ -840,16 +1013,13 @@ db.collection(appointmentsPath).onSnapshot(
 
         const isFreshBooking = secondsSinceCreation < 300;
 
-        console.log(
-          `➕ New appointment: ${docId} | status: ${currentStatus} | age: ${Math.round(secondsSinceCreation)}s | fresh: ${isFreshBooking}`
-        );
-
+        // ✅ Only log + notify for fresh bookings
         if (isFreshBooking) {
-          console.log(`\n✅ New booking → Sending to Hospital WhatsApp...`);
+          console.log(`➕ New booking: ${docId}`);
           try {
             await sendHospitalNotification(data, docId);
           } catch (err) {
-            console.error('❌ sendHospitalNotification error:', err.message);
+            console.error('❌ Hospital notification error:', err.message);
           }
         }
       }
@@ -857,24 +1027,16 @@ db.collection(appointmentsPath).onSnapshot(
       // ---------- Modified ----------
       if (change.type === 'modified') {
         const previousStatus = previousStatuses.get(docId);
-        console.log(
-          `🔄 Modified: ${docId} | prev: ${previousStatus} → curr: ${currentStatus}`
-        );
 
         if (previousStatus === 'pending' && currentStatus === 'confirmed') {
           if (data.confirmedBy === 'admin') {
-            console.log(
-              `⏭️ API confirmed — listener skipping (already sent)`
-            );
+            // Already sent via API — skip
           } else {
-            console.log(
-              `\n✅ Direct Firestore confirm detected! Sending notification...`
-            );
+            console.log(`✅ Confirmed (direct): ${docId}`);
             try {
               await sendPatientConfirmation(data, docId);
-              console.log(`✅ Patient notification sent\n`);
             } catch (err) {
-              console.error('❌ sendPatientConfirmation error:', err.message);
+              console.error('❌ Patient notification error:', err.message);
             }
           }
         }
@@ -885,7 +1047,7 @@ db.collection(appointmentsPath).onSnapshot(
       // ---------- Removed ----------
       if (change.type === 'removed') {
         previousStatuses.delete(docId);
-        console.log(`➖ Appointment removed: ${docId}`);
+        // ✅ Removed log (was flooding)
       }
     });
   },
@@ -898,11 +1060,11 @@ db.collection(appointmentsPath).onSnapshot(
 // 🚀 সার্ভার চালু
 // ==================================================
 app.listen(PORT, () => {
-  console.log(`🚀 Backend Server running on port: ${PORT}`);
-  console.log(`📁 Hospital ID: ${HOSPITAL_ID}`);
-  console.log(`📁 Appointments path: ${appointmentsPath}`);
-  console.log(`📞 Hospital WhatsApp: ${HOSPITAL_WHATSAPP}`);
-  console.log(`🌐 CORS allowed origins: ${ALLOWED_ORIGINS.join(', ')}\n`);
+  console.log(`🚀 Server running on port: ${PORT}`);
+  console.log(`📁 Auth dir: ${AUTH_DIR}`);
+  console.log(`🔗 Volume: ${process.env.RAILWAY_VOLUME_MOUNT_PATH || 'none'}`);
+  console.log(`🌐 Public URL: ${process.env.RAILWAY_PUBLIC_DOMAIN || 'localhost'}`);
+  console.log(`📱 QR endpoint: /qr\n`);
 });
 
 // ---------- WhatsApp কানেকশন শুরু ----------
@@ -910,7 +1072,7 @@ connectToWhatsApp();
 
 // ---------- Graceful Shutdown ----------
 process.on('SIGINT', () => {
-  console.log('\n\n🛑 Server shutting down...');
+  console.log('\n🛑 Shutting down...');
   if (sock) {
     try {
       sock.end(undefined);
@@ -920,5 +1082,5 @@ process.on('SIGINT', () => {
 });
 
 process.on('unhandledRejection', (reason) => {
-  console.error('⚠️ Unhandled Rejection:', reason);
+  console.error('⚠️ Unhandled:', reason);
 });
